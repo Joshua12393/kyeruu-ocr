@@ -1,0 +1,56 @@
+CCIS Student Organization Management System (OMS) - Finance Module
+Product Backlog & Implementation Plan
+
+---
+Architecture Plan
+* Frontend (UI/UX): React (via Next.js) 
+* Core Backend API: Next.js API Routes (Node.js) 
+* OCR Microservice: Python (FastAPI) 
+* Database: MySQL + Prisma ORM 
+---
+
+Phase 1: Setup, Schedules & Roles (Sprint 1)
+* FIN-23: Create a schedule group (number, activity type, period) and pre-create its typical inflow/outflow sides automatically.
+* FIN-31: Prevent changing a schedule’s inflow/outflow type once transactions exist to avoid orphaning records.
+* FIN-35: Restrict access to the module entirely to the core 5 roles (Adviser, President, Treasurer, Assistant Treasurer, Auditor).
+* FIN-40: Resolve user permissions based on the current term's officer assignments.
+
+Phase 2: Manual Entry & Core Transactions (Sprint 2)
+* FIN-01 & FIN-02: Record Disbursement Vouchers (DV - Outflow) and Acknowledgement Receipts (AR - Inflow) with required fields.
+* FIN-32: Reject duplicate control numbers at the point of entry.
+* FIN-05: Prevent documents from being assigned to the wrong schedule direction (e.g., an AR in an outflow schedule).
+* FIN-27: Allow editing and deleting saved transactions (deletion restricted to Treasurer).
+* FIN-44: Implement version checks to reject "stale saves" when two officers edit the same record concurrently.
+* FIN-08: Record handwritten collection/sales sheets by manually typing the total, label, and period (bypassing OCR).
+
+Phase 3: Document Linking & Reconciliation (Sprint 3)
+* FIN-28: Allow saving supporting documents (receipts/sheets) unlinked into an orphan queue, to be linked later.
+* FIN-04: Categorize and link individual line items on a receipt to specific DVs (so a mixed-category receipt is entered once).
+* FIN-29: Split a single collection sheet across multiple ARs by recording how much amount each AR covers.
+* FIN-06: Automatically flag incomplete transactions (DVs/ARs missing supporting documents).
+* FIN-09: Automatically flag amount mismatches (when a DV amount doesn't match the sum of its linked line items, or an AR doesn't match its sheets).
+* FIN-34: Flag orphaned supporting documents and line items in the queue.
+* FIN-07: Show flag counts at a glance on the schedule dashboard.
+
+Phase 4: OCR Pipeline Integration (Sprint 4)
+* FIN-30: Create a batch upload interface asking if documents are primary or supporting.
+* FIN-03: Run printed retailer receipts through Structure-Aware Parsing (PaddleOCR) to extract line items as table rows.
+* FIN-41: Run handwritten ARs, DVs, and Certificates through the Vision-Language pipeline (if hardware allows) to extract structured fields.
+* FIN-43: Validate OCR extracted formats (e.g., control number patterns, two-decimal amounts). Highlight low-confidence fields for the user.
+* FIN-42: Allow the user to discard a poor OCR extraction and encode the document manually.
+* FIN-33: Suggest schedule categorizations for line items based on how similar items were categorized historically.
+
+Phase 5: Verification & Auditing Workflow (Sprint 5)
+* FIN-19: Enforce separation of duties: only the Auditor can verify, and the Auditor cannot edit records.
+* FIN-10 & FIN-24: Allow the Auditor to mark a transaction as "Verified" or "Un-verified".
+* FIN-25: Automatically clear a transaction's "Verified" status if it, or its linked documents, are edited.
+* FIN-26: Maintain an append-only log of every verification, un-verification, and automatic clearing event.
+
+Phase 6: Retrieval & Term Lifecycle (Sprint 6)
+* FIN-15: Store every scan in a centralized cloud repository (AWS S3/GCS).
+* FIN-11: Build the side-by-side view showing the original scan next to the transaction data and supporting documents.
+* FIN-17: Implement search by schedule, date range, or control number.
+* FIN-12 & FIN-22: Allow filtering by flag status (verified, incomplete, mismatch) and generate reports for the Auditor.
+* FIN-21: Generate per-schedule totals for a given date range for external statement assembly.
+* FIN-38: Block all creations or edits under a schedule group once the OMS marks the term as closed.
+* FIN-39: Supply the structured records and scans to the OMS account-wide data export.

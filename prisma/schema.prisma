@@ -1,0 +1,288 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum ActivityType {
+  IGP
+  MEMBERSHIP
+  FINES
+  EVENTS
+}
+
+enum Semester {
+  FIRST
+  SECOND
+  SUMMER
+}
+
+enum ScheduleType {
+  INFLOW
+  OUTFLOW
+}
+
+enum RoleType {
+  OFFICER
+  STUDENT
+  ADVISER
+  EXTERNAL
+}
+
+enum Position {
+  ADVISER
+  PRESIDENT
+  TREASURER
+  ASSISTANT_TREASURER
+  AUDITOR
+  OTHER
+}
+
+enum OcrStatus {
+  PENDING
+  PROCESSED
+  MANUAL
+  FAILED
+}
+
+enum OcrPipeline {
+  PRINTED
+  HANDWRITTEN
+  NONE
+}
+
+enum FormOfPayment {
+  CASH
+  E_WALLET
+}
+
+enum ReceiptDocType {
+  RETAILER_RECEIPT
+  CERTIFICATE_OF_EXPENSES
+}
+
+enum ARDocType {
+  COLLECTION_SHEET
+  SALES_SHEET
+}
+
+enum VerificationEventType {
+  VERIFIED
+  UNVERIFIED
+  CLEARED_BY_EDIT
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model ScheduleGroup {
+  id              Int          @id @default(autoincrement())
+  schedule_number String       @db.VarChar(50)
+  activity_type   ActivityType
+  academic_year   String       @db.VarChar(20)
+  semester        Semester
+  is_closed       Boolean      @default(false)
+  closed_at       DateTime?
+
+  schedules Schedule[]
+
+  @@map("schedule_groups")
+}
+
+model Schedule {
+  id                Int          @id @default(autoincrement())
+  schedule_group_id Int
+  type              ScheduleType
+  label             String       @db.VarChar(255)
+
+  group ScheduleGroup @relation(fields: [schedule_group_id], references: [id])
+
+  disbursement_vouchers    DisbursementVoucher[]
+  acknowledgement_receipts AcknowledgementReceipt[]
+  receipt_particulars      ReceiptParticular[]
+
+  @@map("schedules")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  role_type RoleType
+
+  officer_terms       OfficerTerm[]
+  uploaded_scans      DocumentScan[]
+  released_vouchers   DisbursementVoucher[]    @relation("ReleasedTo")
+  verified_vouchers   DisbursementVoucher[]    @relation("VerifiedByDV")
+  remitted_receipts   AcknowledgementReceipt[] @relation("RemittedBy")
+  verified_receipts   AcknowledgementReceipt[] @relation("VerifiedByAR")
+  verification_events VerificationEvent[]
+
+  @@map("users")
+}
+
+model OfficerTerm {
+  id       Int      @id @default(autoincrement())
+  user_id  Int
+  position Position
+  term     String   @db.VarChar(50)
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("officer_terms")
+}
+
+model DocumentScan {
+  id             Int          @id @default(autoincrement())
+  file_path      String       @db.VarChar(500)
+  uploaded_by_id Int
+  uploaded_at    DateTime     @default(now())
+  ocr_status     OcrStatus
+  ocr_pipeline   OcrPipeline?
+  ocr_raw_text   String?      @db.Text
+
+  uploaded_by User @relation(fields: [uploaded_by_id], references: [id])
+
+  disbursement_vouchers    DisbursementVoucher[]
+  acknowledgement_receipts AcknowledgementReceipt[]
+  receipts                 Receipt[]
+  ar_supporting_documents  ARSupportingDocument[]
+
+  @@map("document_scans")
+}
+
+model DisbursementVoucher {
+  id              Int           @id @default(autoincrement())
+  control_number  String        @unique @db.VarChar(50)
+  date            DateTime      @db.Date
+  purpose         String        @db.VarChar(500)
+  amount          Decimal       @db.Decimal(12, 2)
+  released_to_id  Int
+  schedule_id     Int
+  form_of_payment FormOfPayment
+  scan_file_id    Int?
+  is_verified     Boolean       @default(false)
+  verified_by_id  Int?
+  verified_at     DateTime?
+  version         Int           @default(1)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  released_to User     @relation("ReleasedTo", fields: [released_to_id], references: [id])
+  schedule    Schedule @relation(fields: [schedule_id], references: [id])
+  scan_file   DocumentScan? @relation(fields: [scan_file_id], references: [id])
+  verified_by User?    @relation("VerifiedByDV", fields: [verified_by_id], references: [id])
+
+  receipt_particulars  ReceiptParticular[]
+  verification_events  VerificationEvent[]
+
+  @@map("disbursement_vouchers")
+}
+
+model Receipt {
+  id                      Int            @id @default(autoincrement())
+  internal_receipt_number String         @db.VarChar(50)
+  reference_number        String         @db.VarChar(100)
+  date                    DateTime       @db.Date
+  doc_type                ReceiptDocType
+  scan_file_id            Int
+
+  scan_file DocumentScan @relation(fields: [scan_file_id], references: [id])
+
+  particulars ReceiptParticular[]
+
+  @@map("receipts")
+}
+
+model ReceiptParticular {
+  id              Int     @id @default(autoincrement())
+  receipt_id      Int
+  dv_id           Int?
+  particular_name String  @db.VarChar(255)
+  quantity        Decimal @db.Decimal(10, 2)
+  unit_cost       Decimal @db.Decimal(12, 2)
+  gross_amount    Decimal @db.Decimal(12, 2)
+  schedule_id     Int
+
+  receipt  Receipt              @relation(fields: [receipt_id], references: [id])
+  voucher  DisbursementVoucher? @relation(fields: [dv_id], references: [id])
+  schedule Schedule             @relation(fields: [schedule_id], references: [id])
+
+  @@map("receipt_particulars")
+}
+
+model AcknowledgementReceipt {
+  id              Int           @id @default(autoincrement())
+  control_number  String        @unique @db.VarChar(50)
+  date            DateTime      @db.Date
+  purpose         String        @db.VarChar(500)
+  amount          Decimal       @db.Decimal(12, 2)
+  remitted_by_id  Int
+  schedule_id     Int
+  form_of_payment FormOfPayment
+  scan_file_id    Int?
+  is_verified     Boolean       @default(false)
+  verified_by_id  Int?
+  verified_at     DateTime?
+  version         Int           @default(1)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  remitted_by User     @relation("RemittedBy", fields: [remitted_by_id], references: [id])
+  schedule    Schedule @relation(fields: [schedule_id], references: [id])
+  scan_file   DocumentScan? @relation(fields: [scan_file_id], references: [id])
+  verified_by User?    @relation("VerifiedByAR", fields: [verified_by_id], references: [id])
+
+  ar_sheet_links      ARSheetLink[]
+  verification_events VerificationEvent[]
+
+  @@map("acknowledgement_receipts")
+}
+
+model ARSupportingDocument {
+  id             Int       @id @default(autoincrement())
+  doc_type       ARDocType
+  context_label  String    @db.VarChar(255)
+  period_covered String?   @db.VarChar(100)
+  total_amount   Decimal   @db.Decimal(12, 2)
+  scan_file_id   Int
+
+  scan_file      DocumentScan  @relation(fields: [scan_file_id], references: [id])
+  ar_sheet_links ARSheetLink[]
+
+  @@map("ar_supporting_documents")
+}
+
+model ARSheetLink {
+  id                        Int     @id @default(autoincrement())
+  ar_supporting_document_id Int
+  ar_id                     Int
+  amount_covered            Decimal @db.Decimal(12, 2)
+
+  ar_supporting_document ARSupportingDocument   @relation(fields: [ar_supporting_document_id], references: [id])
+  acknowledgement_receipt AcknowledgementReceipt @relation(fields: [ar_id], references: [id])
+
+  @@map("ar_sheet_links")
+}
+
+model VerificationEvent {
+  id          Int                   @id @default(autoincrement())
+  dv_id       Int?
+  ar_id       Int?
+  event       VerificationEventType
+  user_id     Int
+  occurred_at DateTime              @default(now())
+
+  voucher                 DisbursementVoucher?    @relation(fields: [dv_id], references: [id])
+  acknowledgement_receipt AcknowledgementReceipt? @relation(fields: [ar_id], references: [id])
+  user                    User                    @relation(fields: [user_id], references: [id])
+
+  @@map("verification_events")
+}
