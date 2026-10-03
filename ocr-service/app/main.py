@@ -3,8 +3,8 @@ CCIS OMS Finance Module - OCR Microservice
 FastAPI application entry point.
 
 This service handles:
-  - Printed document OCR (PaddleOCR structure-aware parsing)
-  - Handwritten document OCR (vision-language pipeline)
+  - Printed document OCR with geometry-based financial parsing
+  - Handwritten document OCR using the same PaddleOCR recognizer
 """
 
 from fastapi import FastAPI
