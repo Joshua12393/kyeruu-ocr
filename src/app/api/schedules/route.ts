@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
-
-/**
- * GET /api/schedules
- * List all schedule groups with their inflow/outflow schedules.
- */
-export async function GET() {
-  // TODO: Implement with Prisma query
-  return NextResponse.json({ message: "GET /api/schedules - Not yet implemented" });
+import prisma from "@/lib/prisma";
+import { requireFinanceAccess, requireTransactionEditor } from "@/lib/auth";
+import { groupInput } from "@/lib/validation";
+import { apiError } from "@/lib/api";
+import { DEFAULT_SCHEDULE_SIDES } from "@/lib/schedules";
+export async function GET(req: Request) {
+  try {
+    const guard = await requireFinanceAccess(req);
+    if (guard instanceof NextResponse) return guard;
+    return NextResponse.json(await prisma.scheduleGroup.findMany({ include: { schedules: true }, orderBy: { schedule_number: "asc" } }));
+  } catch (error) { return apiError(error); }
 }
-
-/**
- * POST /api/schedules
- * Create a new schedule group and auto-generate inflow/outflow sides.
- */
-export async function POST() {
-  // TODO: Implement schedule group creation (FIN-23)
-  return NextResponse.json({ message: "POST /api/schedules - Not yet implemented" }, { status: 201 });
+export async function POST(req: Request) {
+  try {
+    const guard = await requireTransactionEditor(req);
+    if (guard instanceof NextResponse) return guard;
+    const input = groupInput.parse(await req.json());
+    const group = await prisma.scheduleGroup.create({ data: { ...input, schedules: { create: DEFAULT_SCHEDULE_SIDES[input.activity_type] } }, include: { schedules: true } });
+    return NextResponse.json(group, { status: 201 });
+  } catch (error) { return apiError(error); }
 }
