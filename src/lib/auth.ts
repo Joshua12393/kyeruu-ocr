@@ -5,8 +5,10 @@
  * FIN-40: Resolve user permissions based on current term officer assignments.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth-options";
 
 export type AllowedPosition =
   | "ADVISER"
@@ -31,31 +33,30 @@ export interface AuthenticatedUser {
 }
 
 /**
- * Extracts and validates the current user from the request.
- * 
- * For now, user identity is passed via headers (X-User-Id).
- * In production, replace this with session/JWT-based authentication.
+ * Extracts and validates the current user from the session.
+ * Integrated with NextAuth for secure production access.
  */
-export async function getAuthenticatedUser(
-  req: NextRequest
-): Promise<AuthenticatedUser | null> {
-  const userIdHeader = req.headers.get("X-User-Id");
-  if (!userIdHeader) return null;
+export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
+  const session = await getServerSession(authOptions);
 
-  const userId = parseInt(userIdHeader, 10);
-  if (isNaN(userId)) return null;
+  if (!session?.user) return null;
+
+  const userId = Number(session.user.id);
+  if (!Number.isSafeInteger(userId) || userId <= 0) return null;
+  const currentTerm = process.env.FINANCE_CURRENT_TERM?.trim();
+  if (!currentTerm) return null;
 
   // FIN-40: Look up the user's CURRENT term assignment
   const officerTerm = await prisma.officerTerm.findFirst({
     where: {
       user_id: userId,
-      position: { in: FINANCE_POSITIONS },
+      term: currentTerm,
     },
     orderBy: { id: "desc" }, // most recent term
     include: { user: true },
   });
 
-  if (!officerTerm) return null;
+  if (!officerTerm || !FINANCE_POSITIONS.includes(officerTerm.position as AllowedPosition)) return null;
 
   return {
     id: officerTerm.user.id,
@@ -70,10 +71,14 @@ export async function getAuthenticatedUser(
  * required positions. Returns a 403 response if not.
  */
 export async function requirePosition(
-  req: NextRequest,
+  req: Request,
   allowedPositions: AllowedPosition[]
 ): Promise<{ user: AuthenticatedUser } | NextResponse> {
-  const user = await getAuthenticatedUser(req);
+  const origin = req.headers.get("origin");
+  if (!["GET", "HEAD"].includes(req.method) && origin && origin !== new URL(req.url).origin) {
+    return NextResponse.json({ error: "Cross-origin writes are not allowed." }, { status: 403 });
+  }
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
@@ -100,21 +105,21 @@ export async function requirePosition(
  */
 
 // Any finance officer can read
-export function requireFinanceAccess(req: NextRequest) {
+export function requireFinanceAccess(req: Request) {
   return requirePosition(req, FINANCE_POSITIONS);
 }
 
 // Only Treasurer can delete records (FIN-27)
-export function requireTreasurer(req: NextRequest) {
+export function requireTreasurer(req: Request) {
   return requirePosition(req, ["TREASURER"]);
 }
 
 // Only Auditor can verify/un-verify (FIN-19)
-export function requireAuditor(req: NextRequest) {
+export function requireAuditor(req: Request) {
   return requirePosition(req, ["AUDITOR"]);
 }
 
 // Treasurer + Assistant Treasurer can create/edit transactions
-export function requireTransactionEditor(req: NextRequest) {
+export function requireTransactionEditor(req: Request) {
   return requirePosition(req, ["TREASURER", "ASSISTANT_TREASURER"]);
 }
