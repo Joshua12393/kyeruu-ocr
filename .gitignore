@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Private document scans and Python runtime
+/private-uploads/
+/uploads/
+/ocr-service/.venv/
+**/__pycache__/
+!.env.example
+
+/.test-artifacts/

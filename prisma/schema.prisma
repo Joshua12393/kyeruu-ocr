@@ -1,6 +1,5 @@
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -116,6 +115,8 @@ model User {
   id        Int      @id @default(autoincrement())
   name      String   @db.VarChar(255)
   role_type RoleType
+  email     String?  @unique @db.VarChar(255)
+  password_hash String? @db.VarChar(255)
 
   officer_terms       OfficerTerm[]
   uploaded_scans      DocumentScan[]

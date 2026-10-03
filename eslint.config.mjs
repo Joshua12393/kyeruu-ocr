@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "ocr-service/.venv/**",
+    ".test-artifacts/**",
+    "private-uploads/**",
+    "uploads/**",
   ]),
 ]);
 
