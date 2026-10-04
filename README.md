@@ -3,23 +3,56 @@
 Next.js, MySQL/MariaDB, Prisma 7, and a private Python PaddleOCR service.
 The local active officer term is `2026-2027`.
 
+## Frontend
+
+The finance shell adapts TailAdmin's free Next.js dashboard palette and layout
+patterns, with its MIT notice retained in `licenses/TailAdmin-LICENSE.txt`.
+Source: https://github.com/TailAdmin/free-nextjs-admin-dashboard.
+The overview uses live database totals and recent entries. Figures cover all
+schedule groups; the active term determines officer access.
+The OCR workspace previews selected images locally before upload and keeps
+editable values alongside the original. Adviser, President, Treasurer, and
+Assistant Treasurer can extract and open drafts during the configured calendar.
+Auditor has viewing and verification access, without editing privileges.
+
 ## Local setup (Windows / XAMPP)
 
 Start MySQL in XAMPP. Apache is not required. Keep your existing `.env`; use
 `.env.example` as the configuration reference. Set a random `NEXTAUTH_SECRET`,
 the database URL, and the exact `FINANCE_CURRENT_TERM` assignment label.
+Set `NEXTAUTH_URL` to the browser's application URL; account forms accept
+requests from that origin.
 
 ```powershell
 npm install
 npm run db:migrate
-npm run officer:provision
 ```
 
-Provisioning prompts for email, name, position, and a hidden password. Run it
-for the Treasurer and Auditor as needed. Existing accounts without configured
-credentials cannot sign in. Re-running it for an email resets that password
-and appends an officer assignment. The latest assignment in the active term
-determines access.
+Open `/register` to create an account with a name, email, and password.
+New accounts wait for approval and cannot access finance records. Only an Admin
+uses **Account management** to create accounts, assign roles, deactivate/reactivate,
+or delete logins. Officer roles apply to the active term; Admin access is independent
+of officer assignments and does not grant finance entry or verification permissions.
+President and Adviser accounts cannot manage accounts.
+
+Sign in as Admin and open **Terms & calendar** (`/terms`) to configure the active
+assignment term and its inclusive start/end dates (Philippine time). The local
+`2026-2027` dates are deliberately unset at the user's request: Finance is read-only
+until both dates are entered. Unset, future, or expired calendars reject direct API
+writes too. `FINANCE_CURRENT_TERM` is only a bootstrap fallback once OMS settings
+have been saved. Role assignment uses the current OMS term without restarting.
+Current assigned officers can read previous-term records; former assignments alone
+do not grant access. Historical groups and closed groups cannot be changed.
+
+For a brand-new installation only, `npm run admin:provision` bootstraps the first
+Admin with a hidden password. Existing emails are never overwritten by that command.
+Use the website for additional accounts. The legacy `officer:provision` command
+remains available for maintenance; re-running it resets an officer's password.
+
+Deactivation invalidates existing sessions and blocks sign-in. Reactivation requires
+a fresh login. Deleting an account removes its credentials and hides it from the
+account list, retaining its user record for financial and audit references. Admins
+cannot change, deactivate, or delete their own account.
 
 The initial migration installs a new schema. A populated pre-existing database
 must first receive an appropriate Prisma migration baseline; never reset it
@@ -45,15 +78,21 @@ Start Next.js in another:
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000) and sign in with a provisioned officer
-account. First extraction downloads two official English mobile models. CPU
+Open [localhost:3000](http://localhost:3000) and sign in, or choose **Create account**.
+First extraction downloads two official English mobile models. CPU
 inference uses the portable executor with oneDNN disabled for Windows compatibility.
 
 ## Workflow
 
-- Create schedule groups; inflow/outflow schedules are generated automatically.
+- Create schedule groups: IGP/Events default to inflow and outflow;
+  Membership/Fines default to inflow only. Customize one or two distinct sides in
+  **Schedules → Edit group & sides**. Safe renames preserve transaction/item links.
+  Used sides cannot be removed or change direction; closed metadata is frozen.
 - Enter vouchers in outflow schedules and acknowledgement receipts in inflow
   schedules. Forms support editing and Treasurer-only deletion.
+- If the transaction schedule list is empty, use **Create schedule group** inside
+  the form. Creation selects the appropriate inflow/outflow side without clearing
+  your transaction values. Use **Refresh schedules** for groups created elsewhere.
 - Upload a PNG/JPEG/WebP image on the OCR page, up to 10 MB. Review recognized
   values and open a transaction draft, or save the scan for manual entry.
 - Record retailer-receipt items or handwritten collection/sales-sheet totals on
