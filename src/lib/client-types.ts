@@ -1,7 +1,7 @@
 export interface UserOption { id: number; name: string; }
 export interface Scan { id: number; file_path: string; uploaded_at: string; }
 export interface OrphanDocument extends Scan { kind: "SCAN" | "PARTICULAR" | "SHEET"; scan_id: number; }
-export interface ScheduleOption { id: number; type: "INFLOW" | "OUTFLOW"; label: string; }
+export interface ScheduleOption { id: number; type: "INFLOW" | "OUTFLOW"; label: string; group?: { academic_year: string; is_closed: boolean }; }
 export interface ScheduleGroup { id: number; schedule_number: string; activity_type: "IGP" | "MEMBERSHIP" | "FINES" | "EVENTS"; academic_year: string; semester: "FIRST" | "SECOND" | "SUMMER"; is_closed: boolean; schedules: ScheduleOption[]; }
 export interface Transaction {
   id: number; control_number: string; date: string; purpose: string; amount: string;

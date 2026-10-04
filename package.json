@@ -11,6 +11,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "officer:provision": "tsx scripts/provision-officer.ts",
+    "admin:provision": "tsx scripts/provision-admin.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:integration": "tsx scripts/integration-test.ts",
     "postinstall": "prisma generate"

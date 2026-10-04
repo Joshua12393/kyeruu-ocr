@@ -9,6 +9,9 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
+import { applicationOrigin } from "@/lib/request-origin";
+import { FINANCE_EDITORS } from "./capabilities";
+import { currentTermName, calendarWriteError } from "./terms";
 
 export type AllowedPosition =
   | "ADVISER"
@@ -28,28 +31,38 @@ const FINANCE_POSITIONS: AllowedPosition[] = [
 export interface AuthenticatedUser {
   id: number;
   name: string;
-  position: AllowedPosition;
+  position: AllowedPosition | "ADMIN";
   term: string;
+  can_write: boolean;
+  write_restriction: string | null;
 }
 
 /**
  * Extracts and validates the current user from the session.
  * Integrated with NextAuth for secure production access.
  */
-export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
+export async function getSessionAccount() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) return null;
 
   const userId = Number(session.user.id);
   if (!Number.isSafeInteger(userId) || userId <= 0) return null;
-  const currentTerm = process.env.FINANCE_CURRENT_TERM?.trim();
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, role_type: true, is_active: true, deleted_at: true, auth_version: true } });
+  if (!account || !account.is_active || account.deleted_at || account.auth_version !== session.user.authVersion) return null;
+  return account;
+}
+export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
+  const account = await getSessionAccount();
+  if (!account) return null;
+  const currentTerm = await currentTermName().catch(() => null);
+  if (account.role_type === "ADMIN") return { id: account.id, name: account.name, position: "ADMIN", term: currentTerm || "Not configured", can_write: false, write_restriction: null };
   if (!currentTerm) return null;
 
   // FIN-40: Look up the user's CURRENT term assignment
   const officerTerm = await prisma.officerTerm.findFirst({
     where: {
-      user_id: userId,
+      user_id: account.id,
       term: currentTerm,
     },
     orderBy: { id: "desc" }, // most recent term
@@ -58,11 +71,14 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
 
   if (!officerTerm || !FINANCE_POSITIONS.includes(officerTerm.position as AllowedPosition)) return null;
 
+  const restriction = calendarWriteError(await prisma.academicTerm.findUnique({ where: { name: currentTerm } }));
   return {
     id: officerTerm.user.id,
     name: officerTerm.user.name,
     position: officerTerm.position as AllowedPosition,
     term: officerTerm.term,
+    can_write: restriction === null,
+    write_restriction: restriction,
   };
 }
 
@@ -72,10 +88,10 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
  */
 export async function requirePosition(
   req: Request,
-  allowedPositions: AllowedPosition[]
+  allowedPositions: (AllowedPosition | "ADMIN")[]
 ): Promise<{ user: AuthenticatedUser } | NextResponse> {
   const origin = req.headers.get("origin");
-  if (!["GET", "HEAD"].includes(req.method) && origin && origin !== new URL(req.url).origin) {
+  if (!["GET", "HEAD"].includes(req.method) && origin && origin !== applicationOrigin(req)) {
     return NextResponse.json({ error: "Cross-origin writes are not allowed." }, { status: 403 });
   }
   const user = await getAuthenticatedUser();
@@ -97,6 +113,9 @@ export async function requirePosition(
     );
   }
 
+  if (!["GET", "HEAD"].includes(req.method) && user.position !== "ADMIN" && !user.can_write) {
+    return NextResponse.json({ error: user.write_restriction }, { status: 403 });
+  }
   return { user };
 }
 
@@ -107,6 +126,9 @@ export async function requirePosition(
 // Any finance officer can read
 export function requireFinanceAccess(req: Request) {
   return requirePosition(req, FINANCE_POSITIONS);
+}
+export function requireAdmin(req: Request) {
+  return requirePosition(req, ["ADMIN"]);
 }
 
 // Only Treasurer can delete records (FIN-27)
@@ -119,7 +141,7 @@ export function requireAuditor(req: Request) {
   return requirePosition(req, ["AUDITOR"]);
 }
 
-// Treasurer + Assistant Treasurer can create/edit transactions
+// Editing and verification capabilities remain mutually exclusive.
 export function requireTransactionEditor(req: Request) {
-  return requirePosition(req, ["TREASURER", "ASSISTANT_TREASURER"]);
+  return requirePosition(req, [...FINANCE_EDITORS]);
 }

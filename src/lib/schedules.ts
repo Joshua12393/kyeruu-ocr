@@ -34,11 +34,9 @@ export const DEFAULT_SCHEDULE_SIDES: Record<
   ],
   MEMBERSHIP: [
     { type: "INFLOW", label: "Membership Fee Collections" },
-    { type: "OUTFLOW", label: "Membership Expenses" },
   ],
   FINES: [
     { type: "INFLOW", label: "Fine Collections" },
-    { type: "OUTFLOW", label: "Fine-Related Expenses" },
   ],
   EVENTS: [
     { type: "INFLOW", label: "Event Collections" },

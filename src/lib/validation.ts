@@ -19,3 +19,7 @@ export const groupInput = z.object({
   activity_type: z.enum(["IGP", "MEMBERSHIP", "FINES", "EVENTS"]),
   academic_year: z.string().trim().min(1).max(20), semester: z.enum(["FIRST", "SECOND", "SUMMER"]),
 }).strict();
+export const scheduleSideInput = z.object({ id: positiveId.optional(), type: z.enum(["INFLOW", "OUTFLOW"]), label: z.string().trim().min(1).max(255) }).strict();
+export const scheduleSides = z.array(scheduleSideInput).min(1).max(2).refine(sides => new Set(sides.map(side => side.type)).size === sides.length, "Each direction can appear only once.");
+export const createGroupInput = groupInput.extend({ sides: scheduleSides.optional() });
+export const updateGroupInput = groupInput.partial().extend({ sides: scheduleSides.optional() }).strict().refine(input => Object.keys(input).length > 0, "Provide a metadata or side change.");

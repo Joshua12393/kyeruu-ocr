@@ -10,8 +10,8 @@ export async function listVerification(req: Request) {
     const guard = await requireFinanceAccess(req);
     if (guard instanceof NextResponse) return guard;
     const [vouchers, receipts] = await Promise.all([
-      prisma.disbursementVoucher.findMany({ include: { released_to: { select: { id: true, name: true } }, schedule: true, scan_file: true }, orderBy: { created_at: "desc" } }),
-      prisma.acknowledgementReceipt.findMany({ include: { remitted_by: { select: { id: true, name: true } }, schedule: true, scan_file: true }, orderBy: { created_at: "desc" } }),
+      prisma.disbursementVoucher.findMany({ include: { released_to: { select: { id: true, name: true } }, schedule: { include: { group: true } }, scan_file: true }, orderBy: { created_at: "desc" } }),
+      prisma.acknowledgementReceipt.findMany({ include: { remitted_by: { select: { id: true, name: true } }, schedule: { include: { group: true } }, scan_file: true }, orderBy: { created_at: "desc" } }),
     ]);
     return NextResponse.json({ vouchers, receipts });
   } catch (error) { return apiError(error); }

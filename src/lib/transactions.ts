@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireFinanceAccess, requireTransactionEditor, requireTreasurer } from "@/lib/auth";
-import { apiError, ApiError, lockOpenGroup } from "@/lib/api";
+import { apiError, ApiError, lockOpenGroup, assertScheduleDirection } from "@/lib/api";
 import { positiveId, receiptInput, voucherInput } from "@/lib/validation";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 type Kind = "DV" | "AR";
-const include = { schedule: true, scan_file: true };
+const include = { schedule: { include: { group: true } }, scan_file: true };
 
 export async function listTransactions(req: Request, kind: Kind) {
   try {
@@ -30,6 +30,7 @@ export async function createTransaction(req: Request, kind: Kind) {
       const schedule = await tx.schedule.findUnique({ where: { id: input.schedule_id } });
       if (!schedule || schedule.type !== (kind === "DV" ? "OUTFLOW" : "INFLOW")) throw new ApiError(400, "Invalid schedule direction.");
       await lockOpenGroup(tx, schedule.schedule_group_id);
+      await assertScheduleDirection(tx, schedule.id, kind === "DV" ? "OUTFLOW" : "INFLOW");
       if (input.scan_file_id) await assertAvailableScan(tx, input.scan_file_id, guard.user.id);
       const data = { ...input, date: new Date(`${input.date}T00:00:00Z`) };
       return kind === "DV"
@@ -61,6 +62,7 @@ export async function editTransaction(req: Request, kind: Kind, id: number) {
       const schedule = await tx.schedule.findUnique({ where: { id: input.schedule_id } });
       if (!schedule || schedule.type !== (kind === "DV" ? "OUTFLOW" : "INFLOW")) throw new ApiError(400, "Invalid schedule direction.");
       for (const groupId of [...new Set([current.schedule.schedule_group_id, schedule.schedule_group_id])].sort((a,b) => a-b)) await lockOpenGroup(tx, groupId);
+      await assertScheduleDirection(tx, schedule.id, kind === "DV" ? "OUTFLOW" : "INFLOW");
       if (kind === "DV" && schedule.id !== current.schedule_id && await tx.receiptParticular.count({ where: { dv_id: id } })) {
         throw new ApiError(409, "A voucher with linked receipt items cannot move to another schedule.");
       }

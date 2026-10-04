@@ -29,6 +29,7 @@ enum ScheduleType {
 }
 
 enum RoleType {
+  ADMIN
   OFFICER
   STUDENT
   ADVISER
@@ -108,7 +109,24 @@ model Schedule {
   acknowledgement_receipts AcknowledgementReceipt[]
   receipt_particulars      ReceiptParticular[]
 
+  @@unique([schedule_group_id, type])
+
   @@map("schedules")
+}
+
+// Shared OMS calendar; assignment history retains its existing term names.
+model AcademicTerm {
+  name      String    @id @db.VarChar(50)
+  starts_on DateTime? @db.Date
+  ends_on   DateTime? @db.Date
+  @@map("academic_terms")
+}
+
+model OmsSettings {
+  id           Int    @id
+  current_term String @db.VarChar(50)
+  version      Int    @default(1)
+  @@map("oms_settings")
 }
 
 model User {
@@ -117,6 +135,9 @@ model User {
   role_type RoleType
   email     String?  @unique @db.VarChar(255)
   password_hash String? @db.VarChar(255)
+  is_active Boolean @default(true)
+  deleted_at DateTime?
+  auth_version Int @default(0)
 
   officer_terms       OfficerTerm[]
   uploaded_scans      DocumentScan[]

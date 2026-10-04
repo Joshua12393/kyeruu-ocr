@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { requireFinanceAccess, requireTransactionEditor } from "@/lib/auth";
-import { apiError, ApiError, lockOpenGroup } from "@/lib/api";
+import { apiError, ApiError, lockOpenGroup, assertScheduleDirection } from "@/lib/api";
 import { money, positiveId } from "@/lib/validation";
 import { assertAvailableScan } from "@/lib/transactions";
 
@@ -67,6 +67,7 @@ export async function POST(req: Request) {
         }
       }
       for (const groupId of [...groupIds].sort((a,b) => a-b)) await lockOpenGroup(tx, groupId);
+      if (input.kind === "RECEIPT") for (const item of input.particulars) await assertScheduleDirection(tx, item.schedule_id, "OUTFLOW");
       await assertAvailableScan(tx, input.scan_id, guard.user.id);
       for (const [id, version] of [...linked].sort((a,b) => a[0]-b[0])) {
         const current = input.kind === "RECEIPT" ? await tx.disbursementVoucher.findUnique({ where: { id } }) : await tx.acknowledgementReceipt.findUnique({ where: { id } });
