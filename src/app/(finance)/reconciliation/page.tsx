@@ -1,4 +1,6 @@
 "use client";
+import { useOfficer } from "@/app/navigation";
+import { canEditFinance } from "@/lib/capabilities";
 
 import { getJson, type ReconciliationData, type OrphanDocument, type Transaction } from "@/lib/client-types";
 import React, { useState, useEffect } from "react";
@@ -9,6 +11,7 @@ import { AlertTriangle, FileWarning, Search, Link as LinkIcon } from "lucide-rea
 
 
 export default function ReconciliationPage() {
+  const canEdit = canEditFinance(useOfficer());
   const [data, setData] = useState<ReconciliationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [orphans, setOrphans] = useState<OrphanDocument[]>([]);
@@ -117,7 +120,7 @@ export default function ReconciliationPage() {
                 <p className="text-sm font-medium truncate">{orphan.file_path}</p>
                 <p className="text-xs text-gray-400">{new Date(orphan.uploaded_at).toLocaleDateString()}</p>
               </div>
-              <button
+              <button disabled={!canEdit}
                 onClick={() => { setSelectedOrphan(orphan); setIsLinkModalOpen(true); }}
                 className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                 title="Link to Transaction"
@@ -201,7 +204,7 @@ export default function ReconciliationPage() {
               {selectedOrphan?.kind === "SHEET" && <label className="block">Amount covered<input required name="amount_covered" type="number" min="0.01" step="0.01" className="block border rounded p-2" /></label>}
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setIsLinkModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors">Link Now</button>
+                <button disabled={!canEdit} type="submit" className="px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors">Link Now</button>
               </div>
             </form>
           </div>

@@ -1,10 +1,13 @@
 "use client";
+import { useOfficer } from "@/app/navigation";
+import { canEditFinance } from "@/lib/capabilities";
 import { useEffect, useState } from "react";
 import { getJson, type OrphanDocument, type ScheduleGroup, type ScheduleOption, type Transaction } from "@/lib/client-types";
 
 type Item = { name: string; quantity: string; unitCost: string; scheduleId: string; voucherId: string };
 type Allocation = { receiptId: string; amount: string };
 export default function SupportingPage() {
+  const canEdit = canEditFinance(useOfficer());
   const [kind, setKind] = useState("RECEIPT");
   const [scans, setScans] = useState<OrphanDocument[]>([]);
   const [schedules, setSchedules] = useState<ScheduleOption[]>([]);
@@ -65,7 +68,7 @@ export default function SupportingPage() {
     <p>Save the original image through OCR first, then record its receipt items or collection-sheet allocations here. Unlinked items remain in reconciliation.</p>
     {message && <p role="status">{message}</p>}
     <form onSubmit={save} className="space-y-4 bg-white border rounded-xl p-5">
-      <label className="block">Document kind<select className={input} value={kind} onChange={event => { setKind(event.target.value); setDocType(event.target.value === "RECEIPT" ? "RETAILER_RECEIPT" : "COLLECTION_SHEET"); }}><option value="RECEIPT">Retail receipt / certificate of expenses</option><option value="SHEET">Collection / sales sheet</option></select></label>
+      <fieldset disabled={!canEdit || busy} className="space-y-4"><label className="block">Document kind<select className={input} value={kind} onChange={event => { setKind(event.target.value); setDocType(event.target.value === "RECEIPT" ? "RETAILER_RECEIPT" : "COLLECTION_SHEET"); }}><option value="RECEIPT">Retail receipt / certificate of expenses</option><option value="SHEET">Collection / sales sheet</option></select></label>
       <label className="block">Unassigned scan<select required className={input} value={scanId} onChange={event => setScanId(event.target.value)}><option value="">Choose scan...</option>{scans.map(scan => <option key={scan.id} value={scan.scan_id}>Scan {scan.scan_id} - {new Date(scan.uploaded_at).toLocaleDateString()}</option>)}</select></label>
       <label className="block">Document type<select className={input} value={docType} onChange={event => setDocType(event.target.value)}>{(kind === "RECEIPT" ? ["RETAILER_RECEIPT", "CERTIFICATE_OF_EXPENSES"] : ["COLLECTION_SHEET", "SALES_SHEET"]).map(type => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
       {kind === "RECEIPT" ? <>
@@ -88,7 +91,7 @@ export default function SupportingPage() {
           <button type="button" onClick={() => setAllocations(previous => previous.filter((_,i) => i !== index))}>Remove allocation</button>
         </div>)}<button type="button" className="border rounded p-2" onClick={() => setAllocations(previous => [...previous, { receiptId: "", amount: "" }])}>Add allocation</button>
       </>}
-      <button disabled={busy || !scanId} className="block rounded bg-blue-600 text-white px-4 py-2 disabled:opacity-50">{busy ? "Saving..." : "Save supporting document"}</button>
-    </form>
+      <button disabled={!canEdit || busy || !scanId} className="block rounded bg-blue-600 text-white px-4 py-2 disabled:opacity-50">{busy ? "Saving..." : "Save supporting document"}</button>
+    </fieldset></form>
   </main>;
 }

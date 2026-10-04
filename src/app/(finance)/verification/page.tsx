@@ -1,4 +1,6 @@
 "use client";
+import { useOfficer } from "@/app/navigation";
+import { canVerifyFinance } from "@/lib/capabilities";
 
 import { getJson, type Transaction } from "@/lib/client-types";
 import React, { useState, useEffect } from "react";
@@ -9,6 +11,8 @@ import { CheckCircle, ShieldCheck, Clock } from "lucide-react";
 
 
 export default function VerificationPage() {
+  const officer = useOfficer();
+  const canVerify = canVerifyFinance(officer);
   const [pending, setPending] = useState<{ vouchers: Transaction[], receipts: Transaction[] }>({ vouchers: [], receipts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -73,7 +77,7 @@ export default function VerificationPage() {
           <p className="text-gray-500">Review and verify financial transactions for correctness.</p>
         </div>
         <div className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2">
-          <ShieldCheck size={16} /> Auditor Access
+          <ShieldCheck size={16} /> {canVerify ? "Auditor actions enabled" : "Viewing access"}
         </div>
       </div>
 
@@ -91,7 +95,7 @@ export default function VerificationPage() {
                   <p className="font-mono font-bold">{v.control_number}</p>
                   <p className="text-xs text-gray-500">{v.released_to?.name} / PHP {parseFloat(v.amount).toLocaleString()}</p>
                 </div>
-                <button
+                <button disabled={!canVerify || v.schedule.group?.is_closed || v.schedule.group?.academic_year !== officer?.term}
                   onClick={() => toggleVerification(v.id, "DV", v.is_verified, v.version)}
                   className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
                 >
@@ -119,7 +123,7 @@ export default function VerificationPage() {
                   <p className="font-mono font-bold">{r.control_number}</p>
                   <p className="text-xs text-gray-500">{r.remitted_by?.name} / PHP {parseFloat(r.amount).toLocaleString()}</p>
                 </div>
-                <button
+                <button disabled={!canVerify || r.schedule.group?.is_closed || r.schedule.group?.academic_year !== officer?.term}
                   onClick={() => toggleVerification(r.id, "AR", r.is_verified, r.version)}
                   className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
                 >
