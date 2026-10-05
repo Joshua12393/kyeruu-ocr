@@ -4,7 +4,7 @@ Handwriting uses the same recognizer; all extracted values need human review.
 from __future__ import annotations
 import re
 import threading
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 from functools import lru_cache
 
@@ -45,7 +45,13 @@ def parse_rows(rows: list[dict], pipeline: str) -> dict:
         elif pipeline == "printed" and not _SUMMARY.search(text):
             particular = text[:amount.start()].strip()
             if particular and re.search(r"[A-Za-z]", particular):
-                items.append({"particular": particular, "quantity": None, "unit_cost": None, "amount": float(value), "confidence": confidence * .85})
+                quantity, unit_cost = None, None
+                arithmetic = re.fullmatch(r"(.+?)\s+(\d+(?:\.\d{1,2})?)\s*(?:x|X|×|@)\s*(\d+(?:\.\d{1,2})?)", particular)
+                if arithmetic:
+                    q, unit = Decimal(arithmetic.group(2)), Decimal(arithmetic.group(3))
+                    if q > 0 and unit > 0 and (q * unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == value:
+                        particular, quantity, unit_cost = arithmetic.group(1), float(q), float(unit)
+                items.append({"particular": particular, "quantity": quantity, "unit_cost": unit_cost, "amount": float(value), "confidence": confidence * .85})
     return {"pipeline": pipeline, "raw_text": "\n".join(row["text"] for row in rows), "fields": fields, "line_items": items, "overall_confidence": sum(float(r["confidence"]) for r in rows) / len(rows) if rows else 0.0}
 
 
@@ -82,7 +88,10 @@ class PaddleOCRService:
                         continue
                     xs, ys = [float(p[0]) for p in polygon], [float(p[1]) for p in polygon]
                     words.append({"text": text, "confidence": min(1., max(0., float(confidence))), "x": min(xs), "y": (min(ys) + max(ys)) / 2, "height": max(1., max(ys) - min(ys))})
-        return parse_rows(group_words(words), pipeline)
+        from importlib.metadata import version
+        result = parse_rows(group_words(words), pipeline)
+        result["engine"] = "PaddleOCR " + version("paddleocr")
+        return result
 
 
 @lru_cache(maxsize=1)

@@ -28,6 +28,7 @@ class LineItem(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 class OcrResult(BaseModel):
+    engine: str | None = None
     pipeline: Literal["printed", "handwritten"]
     raw_text: str
     fields: list[ExtractedField]

@@ -1,0 +1,6 @@
+import { z } from "zod";
+export const documentContext = z.object({ schedule_id: z.coerce.number().int().positive(), mode: z.enum(["PRIMARY", "SUPPORTING"]), document_type: z.enum(["DV", "AR", "RETAILER_RECEIPT", "CERTIFICATE_OF_EXPENSES", "COLLECTION_SHEET", "SALES_SHEET"]) });
+export function allowedDocumentTypes(direction: string, mode: string) { return mode === "PRIMARY" ? [direction === "OUTFLOW" ? "DV" : "AR"] : direction === "OUTFLOW" ? ["RETAILER_RECEIPT", "CERTIFICATE_OF_EXPENSES"] : ["COLLECTION_SHEET", "SALES_SHEET"]; }
+export const draftSchema = z.object({ kind: z.enum(["DV", "AR", "RECEIPT", "SHEET"]), scanId: z.number().int().positive(), scheduleId: z.number().int().positive(), documentType: z.string(), parentId: z.number().int().positive().optional(), parentVersion: z.number().int().positive().optional(), fields: z.record(z.string(), z.string()), items: z.array(z.object({ particular: z.string(), quantity: z.number().nullable().optional(), unit_cost: z.number().nullable().optional(), amount: z.number(), scheduleId: z.number().int().positive().optional(), confidence: z.number() })).default([]) });
+export type OcrDraft = z.infer<typeof draftSchema>;
+export const DRAFT_KEY = "finance-reviewed-draft";

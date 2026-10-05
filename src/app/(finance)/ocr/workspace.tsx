@@ -1,101 +1,77 @@
 "use client";
-import { canEditFinance } from "@/lib/capabilities";
-
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { z } from "zod";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, Check, ChevronRight, FileImage, FileText, LoaderCircle, ScanLine, ShieldCheck, UploadCloud, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { OcrResult } from "@/lib/client-types";
 import { useOfficer } from "@/app/navigation";
-
-const definitions = [{ name: "control_number", label: "Control / reference number", placeholder: "e.g. DV-2026-001" }, { name: "date", label: "Document date", placeholder: "" }, { name: "purpose", label: "Purpose / description", placeholder: "Describe this transaction" }, { name: "amount", label: "Total amount (PHP)", placeholder: "0.00" }];
-
+import { canEditFinance } from "@/lib/capabilities";
+import { getJson, type OcrResult, type ScheduleGroup, type ScheduleOption, type Transaction } from "@/lib/client-types";
+import { allowedDocumentTypes, DRAFT_KEY, draftSchema } from "@/lib/ocr-draft";
+type ReviewItem = { particular: string; quantity: string; unit_cost: string; amount: string; confidence: number; scheduleId: string };
+type Review = { file: File; preview: string; scanId?: number; result?: OcrResult; fields: Record<string,string>; rows: ReviewItem[]; status: "ready" | "processing" | "processed" | "manual" | "failed"; error?: string; confirmed: boolean };
+const BATCH_KEY = "finance-ocr-batch-review";
+const savedBatch = z.object({ term: z.string(), schedule: z.string(), mode: z.string(), type: z.string(), pipeline: z.string(), parent: z.string().optional(), rows: z.array(z.object({ name: z.string(), scanId: z.number().int().positive(), fields: z.record(z.string(),z.string()), rows: z.array(z.object({ particular: z.string(), quantity: z.string(), unit_cost: z.string(), amount: z.string(), confidence: z.number(), scheduleId: z.string() })), status: z.enum(["processed","manual","failed"]), error: z.string().optional(), confirmed: z.boolean() })) });
 export default function OcrWorkspace() {
-  const router = useRouter();
-  const officer = useOfficer();
-  const canEdit = canEditFinance(officer);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [pipeline, setPipeline] = useState("printed");
-  const [busy, setBusy] = useState(false);
-  const [scanId, setScanId] = useState<number | null>(null);
-  const [result, setResult] = useState<OcrResult | null>(null);
-  const [error, setError] = useState("");
-  const [fields, setFields] = useState<Record<string, string>>({});
-  const [zoom, setZoom] = useState(100);
-  const [dragging, setDragging] = useState(false);
-  const objectUrl = useRef<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => () => { if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); }, []);
-  function selectFile(next: File | null) {
-    if (busy) return;
-    setError("");
-    if (next && !["image/png", "image/jpeg", "image/webp"].includes(next.type)) { setError("Choose a PNG, JPEG, or WebP image."); return; }
-    if (next && next.size > 10 * 1024 * 1024) { setError("This image is too large. Choose a file under 10 MB."); return; }
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    objectUrl.current = next ? URL.createObjectURL(next) : null;
-    setPreview(objectUrl.current); setFile(next); setResult(null); setScanId(null); setFields({}); setZoom(100);
-    if (!next && inputRef.current) inputRef.current.value = "";
+  const officer = useOfficer(), router = useRouter(); const canEdit = canEditFinance(officer);
+  const [sides,setSides] = useState<ScheduleOption[]>([]), [schedule,setSchedule] = useState(""), [mode,setMode] = useState("PRIMARY"), [type,setType] = useState("DV"), [pipeline,setPipeline] = useState("printed"), [reviews,setReviews] = useState<Review[]>([]), [selected,setSelected] = useState(0), [busy,setBusy] = useState(false), [message,setMessage] = useState("");
+  const urls = useRef<string[]>([]);
+  const [parents,setParents] = useState<Transaction[]>([]), [parent,setParent] = useState("");
+  useEffect(() => { Promise.all([getJson<Transaction[]>("/api/transactions/vouchers"),getJson<Transaction[]>("/api/transactions/receipts")]).then(([dvs,ars]) => setParents([...dvs,...ars])).catch(error => setMessage(error.message)); }, []);
+  useEffect(() => { getJson<ScheduleGroup[]>("/api/schedules").then(groups => setSides(groups.filter(group => !group.is_closed && group.academic_year === officer?.term).flatMap(group => group.schedules))).catch(error => setMessage(error.message)); return () => { urls.current.forEach(url => URL.revokeObjectURL(url)); }; }, [officer?.term]);
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      const raw = sessionStorage.getItem(BATCH_KEY); if (!raw) return;
+      try { const saved = savedBatch.parse(JSON.parse(raw)); if (saved.term !== officer?.term) { sessionStorage.removeItem(BATCH_KEY); return; }
+        setSchedule(saved.schedule); setMode(saved.mode); setType(saved.type); setPipeline(saved.pipeline); setParent(saved.parent || "");
+        setReviews(saved.rows.map(row => ({ ...row, file: new File([],row.name), preview: "/api/storage?scanId=" + row.scanId })));
+        setMessage("Your remaining saved batch reviews have been restored. Unsaved files must be chosen again."); sessionStorage.removeItem(BATCH_KEY);
+      } catch { sessionStorage.removeItem(BATCH_KEY); }
+    });
+  }, [officer?.term]);
+  const direction = sides.find(side => String(side.id) === schedule)?.type || "OUTFLOW";
+  const types = allowedDocumentTypes(direction, mode), sheet = type === "COLLECTION_SHEET" || type === "SALES_SHEET";
+  const current = reviews[selected];
+  function context(nextSchedule: string, nextMode: string) { const nextDirection = sides.find(side => String(side.id) === nextSchedule)?.type || "OUTFLOW"; setSchedule(nextSchedule); setMode(nextMode); setParent(""); setType(allowedDocumentTypes(nextDirection,nextMode)[0]); }
+  function choose(files: FileList | null) {
+    if (!files) return; const list = Array.from(files); if (list.length > (mode === "PRIMARY" ? 1 : 10)) { setMessage("Choose one primary document or up to ten supporting files."); return; }
+    if (list.some(file => !["image/png","image/jpeg","image/webp"].includes(file.type) || !file.size || file.size > 10 * 1024 * 1024)) { setMessage("Every file must be a nonempty PNG/JPEG/WebP image no larger than 10 MB."); return; }
+    urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current = list.map(file => URL.createObjectURL(file)); setReviews(list.map((file,index) => ({ file, preview: urls.current[index], fields: {}, rows: [], status: "ready", confirmed: false }))); setSelected(0); setMessage("");
   }
-  async function extract(manual = false) {
-    if (!file || busy || !canEdit) return;
-    setBusy(true); setError(""); setResult(null); setScanId(null); setFields({});
-    const form = new FormData(); form.append("file", file); form.append("pipeline", manual ? "manual" : pipeline);
+  function update(index: number, patch: Partial<Review>) { setReviews(previous => previous.map((row,i) => i === index ? { ...row, ...patch } : row)); }
+  async function process(index: number, manual = false) {
+    const row = reviews[index]; if (!row) return; update(index, { status: "processing", error: undefined, confirmed: false });
     try {
-      const response = await fetch("/api/ocr/process", { method: "POST", body: form });
-      const data = await response.json() as { scanId?: number; extractedData?: OcrResult; error?: string };
-      if (data.scanId) setScanId(data.scanId);
-      if (!response.ok) throw new Error(data.error || "Extraction failed.");
-      if (data.extractedData) { setResult(data.extractedData); setFields(Object.fromEntries(data.extractedData.fields.map(field => [field.field_name, field.value]))); }
-    } catch (error) { setError(error instanceof Error ? error.message : "Extraction failed."); }
-    finally { setBusy(false); }
+      const form = new FormData(); if (row.scanId) form.append("scan_id", String(row.scanId)); else form.append("file",row.file);
+      form.append("pipeline", manual || sheet ? "manual" : pipeline); form.append("schedule_id",schedule); form.append("mode",mode); form.append("document_type",type);
+      const response = await fetch("/api/ocr/process", { method: "POST", body: form }); const data = await response.json();
+      if (!response.ok) { update(index, { scanId: data.scanId || row.scanId, status: "failed", error: data.error || "Extraction failed." }); return; }
+      const result = data.extractedData as OcrResult | null;
+      update(index, { scanId: data.scanId, result: result || undefined, fields: result ? Object.fromEntries(result.fields.map(field => [field.field_name,field.value])) : row.fields, rows: result ? result.line_items.map(item => ({ particular: item.particular, quantity: item.quantity == null ? "" : String(item.quantity), unit_cost: item.unit_cost == null ? "" : String(item.unit_cost), amount: String(item.amount), confidence: item.confidence, scheduleId: schedule })) : row.rows, status: result ? "processed" : "manual" });
+    } catch (error) { update(index, { status: "failed", error: error instanceof Error ? error.message : "Request failed." }); }
   }
-  function create(kind: "vouchers" | "receipts") {
-    if (!scanId || busy || !canEdit) return;
-    try { sessionStorage.setItem("ocr-transaction-draft", JSON.stringify({ scanId, fields })); router.push(`/transactions/${kind}`); }
-    catch { setError("Your browser could not save the draft. Enable session storage and try again."); }
+  async function run(manual = false, retryOnly = false) {
+    if (!canEdit || !schedule || busy) return; setBusy(true); setMessage("");
+    const queue = reviews.map((row,index) => ({ row,index })).filter(({row}) => retryOnly ? row.status === "failed" : row.status === "ready").map(({index}) => index);
+    if (mode === "PRIMARY" && reviews.length !== 1) { setMessage("Primary transactions use one document at a time."); setBusy(false); return; }
+    let position = 0; await Promise.all([0,1].map(async () => { while (position < queue.length) { const index = queue[position++]; await process(index, manual); } })); setBusy(false);
   }
-  const source = preview || (scanId ? `/api/storage?scanId=${scanId}` : null);
-  const confidence = result ? Math.round(result.overall_confidence * 100) : null;
-  const reviewedCount = definitions.filter(field => fields[field.name]?.trim()).length;
-  return <main className="mx-auto max-w-[1600px] space-y-6 p-5 sm:p-8">
-    <div className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight">Document OCR</h1><p className="mt-1.5 text-sm text-gray-500">Turn a document into a draft. Review each value before recording it.</p></div><Link href="/supporting" className="finance-secondary"><FileText size={16} /> Supporting documents <ArrowRight size={16} /></Link></div>
-    <ol aria-label="Document workflow" className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">{[{ title: "Upload document", done: !!file, active: !scanId }, { title: "Review extraction", done: !!result, active: !!scanId }, { title: "Create transaction", done: false, active: false }].map((step,index) => <li key={step.title} className="flex items-center gap-3"><span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${step.done ? "bg-brand-500 text-white" : step.active ? "bg-brand-50 text-brand-500" : "bg-gray-100 text-gray-400"}`}>{step.done ? <Check size={14} /> : index + 1}</span><span className={step.active || step.done ? "font-medium text-gray-700" : "text-gray-400"}>{step.title}</span>{index < 2 && <ChevronRight size={15} className="text-gray-300" />}</li>)}</ol>
-    {!canEdit && <div className="flex gap-3 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm text-gray-700"><ShieldCheck size={20} className="shrink-0 text-brand-500" /><div><p className="font-semibold">You have viewing access</p><p className="mt-1 leading-6">You can preview a document here. Uploading scans, extracting text, and creating drafts require an Adviser, President, Treasurer, or Assistant Treasurer account with an active calendar.</p></div></div>}
-    {error && <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={20} className="shrink-0" /><p>{error}</p></div>}
-    <div className="grid items-start gap-6 xl:grid-cols-[1.1fr_1fr]">
-      <section className="finance-card min-w-0 overflow-hidden" aria-labelledby="preview-title">
-        <div className="flex items-center justify-between border-b px-5 py-4"><div><h2 id="preview-title" className="font-semibold">Document preview</h2><p className="mt-1 text-xs text-gray-500">PNG, JPEG, or WebP · Up to 10 MB</p></div><span className="rounded-lg bg-gray-50 p-2 text-gray-400"><FileImage size={20} /></span></div>
-        <div className="space-y-4 p-5">
-          <div onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); selectFile(event.dataTransfer.files[0] || null); }} className={`relative rounded-xl border-2 border-dashed p-5 text-center transition ${dragging ? "border-brand-500 bg-brand-50" : "border-gray-200 bg-gray-50/50"}`}>
-            <input ref={inputRef} id="ocr-image" className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={event => selectFile(event.target.files?.[0] || null)} />
-            <label htmlFor="ocr-image" className={`flex flex-col items-center gap-2 ${busy ? "cursor-wait" : "cursor-pointer"}`}><span className="rounded-xl border bg-white p-2.5 text-brand-500"><UploadCloud size={23} /></span><span className="text-sm font-semibold"><span className="text-brand-500">Click to choose</span> or drag an image here</span><span className="text-xs text-gray-500">{file ? "Choose a different document to start a new extraction" : "Use a clear, well-lit image with the whole document visible"}</span></label>
-          </div>
-          {file && <div className="flex items-center gap-3 rounded-lg border px-3 py-2.5"><FileImage size={19} className="shrink-0 text-brand-500" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.name}</p><p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB {scanId ? `· Saved scan #${scanId}` : "· Local preview"}</p></div><button disabled={busy} aria-label="Remove selected document" onClick={() => selectFile(null)} className="rounded p-1.5 text-gray-400 hover:bg-gray-50"><X size={17} /></button></div>}
-          <div className="flex items-center justify-between gap-3"><label htmlFor="document-type" className="text-sm font-medium">Document type</label><select id="document-type" className="finance-input max-w-55" disabled={busy} value={pipeline} onChange={event => setPipeline(event.target.value)}><option value="printed">Printed receipt</option><option value="handwritten">Handwritten document</option></select></div>
-          {pipeline === "handwritten" && <p className="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-800">Handwriting can be difficult to recognize. Check the original closely, or save the scan for manual entry.</p>}
-          <div className="overflow-hidden rounded-xl border bg-gray-100"><div className="flex items-center justify-between border-b bg-white px-3 py-2"><span className="text-xs font-medium text-gray-500">Original document</span><div className="flex items-center gap-2"><button title="Zoom out" aria-label="Zoom out" disabled={!source || zoom <= 50} onClick={() => setZoom(value => Math.max(50,value - 25))} className="rounded p-1.5 text-gray-500 disabled:opacity-30"><ZoomOut size={17} /></button><button disabled={!source} title="Reset zoom" className="w-12 text-center text-xs tabular-nums text-gray-500" onClick={() => setZoom(100)}>{zoom}%</button><button title="Zoom in" aria-label="Zoom in" disabled={!source || zoom >= 200} onClick={() => setZoom(value => Math.min(200,value + 25))} className="rounded p-1.5 text-gray-500 disabled:opacity-30"><ZoomIn size={17} /></button></div></div>
-            <div className="h-[420px] overflow-auto p-4 sm:h-[520px]">{source ? <div style={{ width: `${zoom}%`, minWidth: `${zoom}%` }} className="mx-auto"><Image unoptimized width={800} height={1100} src={source} alt={file ? `Preview of ${file.name}` : "Saved original document"} className="h-auto w-full rounded bg-white shadow-sm" onError={() => setError("The preview could not load. Choose a valid image or check your connection.")} /></div> : <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-400"><FileImage size={48} strokeWidth={1} /><p className="text-sm">Your document preview will appear here</p><p className="max-w-60 text-xs leading-5">Keep the original beside your extracted values as you review.</p></div>}</div>
-          </div>
-          <div className="flex flex-wrap gap-3"><button className="finance-primary flex-1" disabled={!file || busy || !canEdit} onClick={() => extract()}>{busy ? <LoaderCircle className="animate-spin" size={18} /> : <ScanLine size={18} />}{busy ? "Processing document…" : "Extract text"}</button><button className="finance-secondary" disabled={!file || busy || !canEdit} onClick={() => extract(true)}>Manual entry</button></div>
-          <p role="status" aria-live="polite" className="text-xs leading-5 text-gray-500">{busy ? "Reading your document. Please keep this page open." : "Manual entry saves the image and lets you fill in the values yourself."}</p>
-        </div>
-      </section>
-      <section className="finance-card min-w-0 overflow-hidden" aria-labelledby="review-title">
-        <div className="flex items-center justify-between gap-2 border-b px-5 py-4"><div><h2 id="review-title" className="font-semibold">Review extracted values</h2><p className="mt-1 text-xs text-gray-500">Correct anything that differs from the original</p></div>{scanId && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">Scan saved</span>}</div>
-        <div className="space-y-6 p-5 sm:p-6">
-          {result ? <div className="rounded-xl border bg-gray-50 p-4"><div className="flex items-center justify-between"><span className="text-sm font-medium">Text recognition confidence</span><span className={`text-sm font-semibold ${confidence! < 80 ? "text-amber-700" : "text-emerald-700"}`}>{confidence}%</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-500" style={{ width: `${confidence}%` }} /></div><p className="mt-3 text-xs leading-5 text-gray-500">This reflects text recognition, not accounting accuracy. Always compare the amounts and dates.</p></div> : <div role="status" className="flex items-start gap-3 rounded-xl bg-gray-50 p-4"><ScanLine size={20} className="shrink-0 text-gray-400" /><p className="text-sm leading-6 text-gray-500">{busy ? "Extracting text… your values will appear here when processing finishes." : scanId ? "Your scan is saved. Enter values below using the original document." : "Select a document and extract its text to start reviewing, or choose manual entry."}</p></div>}
-          <div className="space-y-5">{definitions.map(({ name,label,placeholder }) => {
-            const recognized = result?.fields.find(field => field.field_name === name);
-            const uncertain = !!result && (!recognized || recognized.confidence < .8);
-            return <div key={name}><div className="mb-2 flex items-center justify-between gap-2"><label htmlFor={`field-${name}`} className="text-sm font-medium">{label}</label>{uncertain && <span className="flex items-center gap-1 text-xs text-amber-700"><AlertCircle size={13} /> Check original</span>}</div>{name === "purpose" ? <textarea id={`field-${name}`} rows={3} className="finance-input resize-y" disabled={!scanId || busy || !canEdit} placeholder={placeholder} value={fields[name] || ""} onChange={event => setFields(previous => ({ ...previous,[name]: event.target.value }))} /> : <input id={`field-${name}`} className="finance-input" disabled={!scanId || busy || !canEdit} type={name === "date" ? "date" : "text"} inputMode={name === "amount" ? "decimal" : undefined} placeholder={placeholder} value={fields[name] || ""} onChange={event => setFields(previous => ({ ...previous,[name]: event.target.value }))} />}</div>;
-          })}</div>
-          {!!result?.line_items.length && <div><h3 className="mb-3 text-sm font-semibold">Detected receipt items</h3><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 font-medium">Item</th><th className="px-3 py-2 text-right font-medium">Amount (PHP)</th></tr></thead><tbody>{result.line_items.map((item,index) => <tr key={index} className="border-t"><td className="px-3 py-3">{item.particular}{item.confidence < .8 && <p className="mt-1 text-xs text-amber-700">Check original</p>}</td><td className="px-3 py-3 text-right tabular-nums">{item.amount.toFixed(2)}</td></tr>)}</tbody></table></div><p className="mt-2 text-xs text-gray-500">Record item details in Supporting documents after reviewing the scan.</p></div>}
-          {result && <details className="rounded-lg border px-4 py-3"><summary className="cursor-pointer text-sm font-medium text-gray-600">Show recognized text</summary><pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-500">{result.raw_text}</pre></details>}
-          <div className="border-t pt-5"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">Continue to a transaction</h3><span className="text-xs text-gray-400">{reviewedCount} / 4 fields filled</span></div><div className="grid gap-3 sm:grid-cols-2"><button className="finance-primary" disabled={!scanId || busy || !canEdit} onClick={() => create("vouchers")}>Create voucher <ArrowRight size={16} /></button><button className="finance-secondary" disabled={!scanId || busy || !canEdit} onClick={() => create("receipts")}>Create receipt <ArrowRight size={16} /></button></div><p className="mt-3 text-xs leading-5 text-gray-500">This opens an editable draft with your reviewed values and scan attached. Complete the transaction form to save the record.</p></div>
-        </div>
-      </section>
-    </div>
+  function continueDraft() {
+    if (!current?.scanId || !current.confirmed) return;
+    try { const kind = mode === "PRIMARY" ? type : sheet ? "SHEET" : "RECEIPT"; const draft = draftSchema.parse({ kind, scanId: current.scanId, scheduleId: Number(schedule), documentType: type, parentId: parent ? Number(parent) : undefined, parentVersion: parent ? parents.find(row => row.id === Number(parent) && String(row.schedule.id) === schedule)?.version : undefined, fields: current.fields, items: current.rows.map(row => ({ particular: row.particular, quantity: row.quantity === "" ? null : Number(row.quantity), unit_cost: row.unit_cost === "" ? null : Number(row.unit_cost), amount: Number(row.amount), confidence: row.confidence, scheduleId: Number(row.scheduleId) })) }); sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      const remaining = reviews.filter((row,index) => index !== selected && row.scanId && row.status !== "processing").map(row => ({ name: row.file.name, scanId: row.scanId, fields: row.fields, rows: row.rows, status: row.status, error: row.error, confirmed: row.confirmed }));
+      sessionStorage.setItem(BATCH_KEY, JSON.stringify({ term: officer?.term, schedule, mode, type, pipeline, parent, rows: remaining })); router.push(mode === "PRIMARY" ? type === "DV" ? "/transactions/vouchers" : "/transactions/receipts" : "/supporting"); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not prepare draft."); }
+  }
+  return <main className="mx-auto max-w-7xl space-y-5 p-5 sm:p-8"><h1 className="text-3xl font-semibold">Record document & OCR review</h1><p className="text-sm text-gray-500">Choose a schedule first. Extraction produces drafts; only a confirmed finance form records money. Supporting evidence never adds a second inflow or expense.</p>{message && <p role="alert" className="border p-3 text-red-700">{message}</p>}
+    <fieldset disabled={busy} className="finance-card grid gap-4 p-4 sm:grid-cols-3"><label>Schedule<select disabled={reviews.length > 0} className="finance-input mt-1" value={schedule} onChange={event => context(event.target.value,mode)}><option value="">Choose schedule…</option>{sides.map(side => <option value={side.id} key={side.id}>{side.type} · {side.label}</option>)}</select></label><label>Document mode<select disabled={reviews.length > 0} className="finance-input mt-1" value={mode} onChange={event => context(schedule,event.target.value)}><option value="PRIMARY">Primary AR / DV</option><option value="SUPPORTING">Supporting evidence / batch</option></select></label><label>Confirmed document type<select disabled={reviews.length > 0} className="finance-input mt-1" value={type} onChange={event => setType(event.target.value)}>{types.map(value => <option key={value}>{value}</option>)}</select></label><label className="sm:col-span-2">Files<input disabled={!schedule || !canEdit} type="file" multiple={mode === "SUPPORTING"} accept="image/png,image/jpeg,image/webp" className="block mt-2" onChange={event => choose(event.target.files)} /></label><label>Recognition<select disabled={sheet} className="finance-input mt-1" value={sheet ? "manual" : pipeline} onChange={event => setPipeline(event.target.value)}><option value="printed">Printed PaddleOCR</option><option value="handwritten">Handwriting baseline (manual review)</option><option value="manual">Manual entry</option></select></label></fieldset>
+    {mode === "SUPPORTING" && <label className="block text-sm">Common parent for this batch (optional)<select disabled={busy || reviews.length > 0} value={parent} onChange={event => setParent(event.target.value)} className="finance-input mt-1"><option value="">Link each document later</option>{parents.filter(row => String(row.schedule.id) === schedule).map(row => <option key={row.id} value={row.id}>{row.control_number}</option>)}</select><span className="text-xs text-gray-500">Applied as a draft choice only. Sheet coverage still requires an explicit amount in the editor.</span></label>}
+    <p className="text-xs text-gray-500">Collection/sales sheets always bypass OCR. Handwriting uses the same pretrained recognizer; accuracy on your handwriting has not been established. Batch processing uses at most two requests; failed files retain their scan IDs.</p>
+    <div className="flex flex-wrap gap-3"><button type="button" className="finance-secondary" disabled={busy || !reviews.length} onClick={() => { setReviews([]); sessionStorage.removeItem(BATCH_KEY); setMessage("Saved scans remain available in the reconciliation queue."); }}>Start another batch</button><button className="finance-primary" disabled={!canEdit || !schedule || !reviews.length || busy} onClick={() => run(pipeline === "manual")}>{busy ? "Processing…" : "Process ready files"}</button><button className="finance-secondary" disabled={!canEdit || busy || !reviews.some(row => row.status === "failed")} onClick={() => run(false,true)}>Retry failed files only</button></div>
+    {!!reviews.length && <div className="flex flex-wrap gap-2">{reviews.map((row,index) => <button key={index} className={selected === index ? "finance-primary" : "finance-secondary"} onClick={() => setSelected(index)}>{row.file.name} · {row.status}{row.scanId ? " · scan #" + row.scanId : ""}</button>)}</div>}
+    {current && <div className="grid items-start gap-5 lg:grid-cols-2"><section className="finance-card p-4"><h2 className="mb-3 font-semibold">Original document</h2><Image unoptimized width={800} height={1100} src={current.preview} alt={current.file.name} className="h-auto w-full" />{current.scanId && <a className="underline text-blue-600" target="_blank" rel="noreferrer" href={"/api/storage?scanId=" + current.scanId}>Open saved original</a>}</section><section className="finance-card space-y-4 p-5"><h2 className="font-semibold">Editable review</h2>{current.error && <p role="alert" className="text-red-700">{current.error}</p>}{current.result && <p className="text-sm">Recognition confidence {Math.round(current.result.overall_confidence * 100)}%. This is not accounting accuracy.</p>}
+      <fieldset disabled={busy || !canEdit || !current.scanId} className="space-y-4">{(sheet ? ["purpose","amount"] : ["control_number","date","purpose","amount"]).map(field => <label className="block text-sm" key={field}>{sheet && field === "purpose" ? "Sheet context / label" : field.replaceAll("_"," ")}<input className="finance-input mt-1" type={field === "date" ? "date" : "text"} value={current.fields[field] || ""} onChange={event => update(selected, { fields: { ...current.fields, [field]: event.target.value }, confirmed: false })} /></label>)}
+      {mode === "SUPPORTING" && !sheet && <><h3 className="font-semibold">Receipt items</h3>{current.rows.map((row,index) => <div className="grid gap-2 rounded border p-3 sm:grid-cols-2" key={index}>{(["particular","quantity","unit_cost","amount"] as const).map(field => <label className="text-sm" key={field}>{field === "amount" ? "Recognized line total" : field.replaceAll("_"," ")}<input className="finance-input" type={field === "particular" ? "text" : "number"} step="0.01" min="0" value={row[field]} onChange={event => update(selected, { rows: current.rows.map((item,i) => i === index ? { ...item,[field]: event.target.value } : item), confirmed: false })} /></label>)}<label className="text-sm">Item schedule<select className="finance-input" value={row.scheduleId} onChange={event => update(selected, { rows: current.rows.map((item,i) => i === index ? { ...item,scheduleId: event.target.value } : item), confirmed: false })}>{sides.filter(side => side.type === "OUTFLOW").map(side => <option key={side.id} value={side.id}>{side.label}</option>)}</select></label><button type="button" className="underline text-red-700" onClick={() => update(selected,{ rows: current.rows.filter((_,i) => i !== index), confirmed: false })}>Remove row</button>{(!row.quantity || !row.unit_cost || row.confidence < .8) && <p className="text-xs text-amber-700">Check original; missing quantities/unit costs stay blank.</p>}</div>)}<button type="button" className="finance-secondary" onClick={() => update(selected,{ rows: [...current.rows,{ particular: "",quantity: "",unit_cost: "",amount: "",confidence: 0,scheduleId: schedule }],confirmed: false })}>Add item</button></>}
+      <div className="flex flex-wrap gap-2"><button type="button" className="finance-secondary" onClick={() => update(selected,{ fields: {},rows: [],result: undefined,confirmed: false })}>Discard predictions, keep scan</button>{current.status === "failed" && <button type="button" className="finance-secondary" onClick={async () => { setBusy(true); await process(selected,true); setBusy(false); }}>Use saved scan manually</button>}</div><label className="flex gap-2 text-sm"><input type="checkbox" checked={current.confirmed} onChange={event => update(selected,{ confirmed: event.target.checked })} />I reviewed this document and will confirm its values in the editor.</label><button disabled={!current.confirmed} className="finance-primary" onClick={continueDraft}>Continue to {mode === "PRIMARY" ? type + " form" : "support editor"}</button></fieldset>
+      {current.result && <details><summary className="cursor-pointer">Machine text</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{current.result.raw_text}</pre></details>}
+    </section></div>}
   </main>;
 }
