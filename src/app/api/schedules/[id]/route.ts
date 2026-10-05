@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { financeMutation } from "@/lib/mutations";
 import { requireTransactionEditor, requireTreasurer } from "@/lib/auth";
 import { apiError, ApiError, lockOpenGroup } from "@/lib/api";
 import { updateGroupInput, positiveId } from "@/lib/validation";
@@ -10,7 +10,7 @@ export async function PATCH(req: Request, context: Context) {
     if (guard instanceof NextResponse) return guard;
     const id = positiveId.parse((await context.params).id);
     const { sides, ...input } = updateGroupInput.parse(await req.json());
-    const group = await prisma.$transaction(async tx => {
+    const group = await financeMutation(guard.user, async tx => {
       await lockOpenGroup(tx, id);
       const existing = await tx.scheduleGroup.findUniqueOrThrow({ where: { id }, include: { schedules: { include: { _count: { select: { disbursement_vouchers: true, acknowledgement_receipts: true, receipt_particulars: true } } } } } });
       const hasDependents = (side: typeof existing.schedules[number]) => Object.values(side._count).some(count => count > 0);
@@ -44,7 +44,7 @@ export async function DELETE(req: Request, context: Context) {
     const guard = await requireTreasurer(req);
     if (guard instanceof NextResponse) return guard;
     const id = positiveId.parse((await context.params).id);
-    await prisma.$transaction(async tx => {
+    await financeMutation(guard.user, async tx => {
       await lockOpenGroup(tx, id);
       const count = await tx.schedule.count({ where: { schedule_group_id: id, OR: [{ disbursement_vouchers: { some: {} } }, { acknowledgement_receipts: { some: {} } }, { receipt_particulars: { some: {} } }] } });
       if (count) throw new ApiError(409, "Cannot delete a group containing transactions or supporting items.");

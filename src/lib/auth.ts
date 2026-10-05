@@ -30,9 +30,12 @@ const FINANCE_POSITIONS: AllowedPosition[] = [
 
 export interface AuthenticatedUser {
   id: number;
+  auth_version?: number;
   name: string;
   position: AllowedPosition | "ADMIN";
   term: string;
+  term_start?: string | null;
+  term_end?: string | null;
   can_write: boolean;
   write_restriction: string | null;
 }
@@ -56,7 +59,7 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
   const account = await getSessionAccount();
   if (!account) return null;
   const currentTerm = await currentTermName().catch(() => null);
-  if (account.role_type === "ADMIN") return { id: account.id, name: account.name, position: "ADMIN", term: currentTerm || "Not configured", can_write: false, write_restriction: null };
+  if (account.role_type === "ADMIN") return { auth_version: account.auth_version, id: account.id, name: account.name, position: "ADMIN", term: currentTerm || "Not configured", can_write: false, write_restriction: null };
   if (!currentTerm) return null;
 
   // FIN-40: Look up the user's CURRENT term assignment
@@ -71,12 +74,16 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
 
   if (!officerTerm || !FINANCE_POSITIONS.includes(officerTerm.position as AllowedPosition)) return null;
 
-  const restriction = calendarWriteError(await prisma.academicTerm.findUnique({ where: { name: currentTerm } }));
+  const calendar = await prisma.academicTerm.findUnique({ where: { name: currentTerm } });
+  const restriction = calendarWriteError(calendar);
   return {
     id: officerTerm.user.id,
+    auth_version: account.auth_version,
     name: officerTerm.user.name,
     position: officerTerm.position as AllowedPosition,
     term: officerTerm.term,
+    term_start: calendar?.starts_on?.toISOString().slice(0,10) || null,
+    term_end: calendar?.ends_on?.toISOString().slice(0,10) || null,
     can_write: restriction === null,
     write_restriction: restriction,
   };

@@ -22,10 +22,10 @@ export async function POST(req: Request) {
     if (guard instanceof NextResponse) return guard;
     requireSameOrigin(req);
     const input = adminAccountInput.parse(await readAccountBody(req));
-    const term = await currentTermName();
     const password_hash = await hashPassword(input.password);
     await prisma.$transaction(async tx => {
       await lockAdmins(tx, guard.user.id);
+      const term = (await tx.omsSettings.findUnique({ where: { id: 1 } }))?.current_term || await currentTermName();
       await tx.user.create({ data: { name: input.name, email: input.email, password_hash, role_type: roleType(input.role), ...(!["ADMIN", "PENDING"].includes(input.role) ? { officer_terms: { create: { position: input.role as "ADVISER" | "PRESIDENT" | "TREASURER" | "ASSISTANT_TREASURER" | "AUDITOR", term } } } : {}) } });
     });
     return NextResponse.json({ message: "Account created successfully." }, { status: 201 });
@@ -36,12 +36,14 @@ export async function POST(req: Request) {
 }
 // Serialize access changes and recheck the acting admin inside the transaction.
 async function lockAdmins(tx: Prisma.TransactionClient, actorId: number) {
+  await tx.$queryRaw`SELECT id FROM oms_settings WHERE id = 1 FOR UPDATE`;
   await tx.$queryRaw`SELECT id FROM users WHERE role_type = 'ADMIN' ORDER BY id FOR UPDATE`;
   const actor = await tx.user.findUnique({ where: { id: actorId } });
   if (!actor || actor.role_type !== "ADMIN" || !actor.is_active || actor.deleted_at) throw new ApiError(403, "Your admin access is no longer active.");
 }
 async function targetAccount(tx: Prisma.TransactionClient, actorId: number, targetId: number) {
   if (targetId === actorId) throw new ApiError(403, "Ask another admin to change or delete your own account.");
+  await tx.$queryRaw`SELECT id FROM users WHERE id = ${targetId} FOR UPDATE`;
   const target = await tx.user.findUnique({ where: { id: targetId } });
   if (!target || target.deleted_at || !target.email || !target.password_hash) throw new ApiError(404, "Account not found.");
   if (target.role_type === "ADMIN" && target.is_active && await tx.user.count({ where: { role_type: "ADMIN", is_active: true, deleted_at: null } }) <= 1) throw new ApiError(409, "Keep at least one active admin account.");
@@ -60,7 +62,8 @@ export async function PATCH(req: Request) {
         await tx.user.update({ where: { id: target.id }, data: { is_active: input.is_active, auth_version: { increment: 1 } } });
       } else {
         await tx.user.update({ where: { id: target.id }, data: { role_type: roleType(input.role) } });
-        await tx.officerTerm.create({ data: { user_id: target.id, term: await currentTermName(), position: input.role === "ADMIN" || input.role === "PENDING" ? "OTHER" : input.role } });
+        const term = (await tx.omsSettings.findUnique({ where: { id: 1 } }))?.current_term || await currentTermName();
+        await tx.officerTerm.create({ data: { user_id: target.id, term, position: input.role === "ADMIN" || input.role === "PENDING" ? "OTHER" : input.role } });
       }
     });
     return NextResponse.json({ message: input.action === "role" ? "Account role updated." : input.is_active ? "Account reactivated. Sign in again to use it." : "Account deactivated. Existing access has been revoked." });

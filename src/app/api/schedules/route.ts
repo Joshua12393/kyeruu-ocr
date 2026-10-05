@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { financeMutation } from "@/lib/mutations";
 import { requireFinanceAccess, requireTransactionEditor } from "@/lib/auth";
 import { createGroupInput } from "@/lib/validation";
 import { apiError, ApiError } from "@/lib/api";
+import { financeFilters, financeQuery } from "@/lib/finance-query";
 import { DEFAULT_SCHEDULE_SIDES } from "@/lib/schedules";
 export async function GET(req: Request) {
   try {
     const guard = await requireFinanceAccess(req);
     if (guard instanceof NextResponse) return guard;
-    return NextResponse.json(await prisma.scheduleGroup.findMany({ include: { schedules: true }, orderBy: { schedule_number: "asc" } }));
+    const [groups, data, unlinked] = await Promise.all([prisma.scheduleGroup.findMany({ include: { schedules: true }, orderBy: { schedule_number: "asc" } }), financeQuery(financeFilters(new URLSearchParams({ term: "all" }))), prisma.receiptParticular.findMany({ where: { dv_id: null }, select: { schedule_id: true } })]);
+    return NextResponse.json(groups.map(group => ({ ...group, schedules: group.schedules.map(side => { const rows = data.all_records.filter(row => row.schedule_id === side.id); return { ...side, summary: { records: rows.length, incomplete: rows.filter(row => row.incomplete).length, mismatched: rows.filter(row => row.mismatch).length, unverified: rows.filter(row => !row.is_verified).length, unlinked_items: unlinked.filter(item => item.schedule_id === side.id).length } }; }) })));
   } catch (error) { return apiError(error); }
 }
 export async function POST(req: Request) {
@@ -18,7 +21,7 @@ export async function POST(req: Request) {
     const { sides, ...input } = createGroupInput.parse(await req.json());
     if (input.academic_year !== guard.user.term) throw new ApiError(403, "Create schedules only in the current OMS term.");
     if (sides?.some(side => side.id)) throw new ApiError(400, "New schedule sides cannot use existing IDs.");
-    const group = await prisma.$transaction(async tx => {
+    const group = await financeMutation(guard.user, async tx => {
       // Serialize calendar/turnover with group creation too.
       const settings = await tx.$queryRaw<{ current_term: string }[]>`SELECT current_term FROM oms_settings WHERE id = 1 FOR UPDATE`;
       if ((settings[0]?.current_term || process.env.FINANCE_CURRENT_TERM?.trim()) !== input.academic_year) throw new ApiError(409, "The active term changed. Reload before saving.");

@@ -87,7 +87,7 @@ model ScheduleGroup {
   id              Int          @id @default(autoincrement())
   schedule_number String       @db.VarChar(50)
   activity_type   ActivityType
-  academic_year   String       @db.VarChar(20)
+  academic_year   String       @db.VarChar(50)
   semester        Semester
   is_closed       Boolean      @default(false)
   closed_at       DateTime?
@@ -119,6 +119,8 @@ model AcademicTerm {
   name      String    @id @db.VarChar(50)
   starts_on DateTime? @db.Date
   ends_on   DateTime? @db.Date
+  closed_at DateTime?
+  closed_by_id Int?
   @@map("academic_terms")
 }
 
@@ -169,6 +171,14 @@ model DocumentScan {
   ocr_status     OcrStatus
   ocr_pipeline   OcrPipeline?
   ocr_raw_text   String?      @db.Text
+  academic_year  String?      @db.VarChar(50)
+  document_type String?      @db.VarChar(50)
+  suggested_schedule_id Int?
+  ocr_version Int @default(0)
+  ocr_engine String? @db.VarChar(100)
+  ocr_duration_ms Int?
+  ocr_started_at DateTime?
+  reviewed_values Json?
 
   uploaded_by User @relation(fields: [uploaded_by_id], references: [id])
 
@@ -196,6 +206,8 @@ model DisbursementVoucher {
   version         Int           @default(1)
   created_at      DateTime      @default(now())
   updated_at      DateTime      @updatedAt
+  deleted_at      DateTime?
+  deleted_by_id   Int?
 
   released_to User     @relation("ReleasedTo", fields: [released_to_id], references: [id])
   schedule    Schedule @relation(fields: [schedule_id], references: [id])
@@ -215,6 +227,8 @@ model Receipt {
   date                    DateTime       @db.Date
   doc_type                ReceiptDocType
   scan_file_id            Int
+  academic_year           String?        @db.VarChar(50)
+  version                 Int            @default(1)
 
   scan_file DocumentScan @relation(fields: [scan_file_id], references: [id])
 
@@ -256,6 +270,8 @@ model AcknowledgementReceipt {
   version         Int           @default(1)
   created_at      DateTime      @default(now())
   updated_at      DateTime      @updatedAt
+  deleted_at      DateTime?
+  deleted_by_id   Int?
 
   remitted_by User     @relation("RemittedBy", fields: [remitted_by_id], references: [id])
   schedule    Schedule @relation(fields: [schedule_id], references: [id])
@@ -275,6 +291,8 @@ model ARSupportingDocument {
   period_covered String?   @db.VarChar(100)
   total_amount   Decimal   @db.Decimal(12, 2)
   scan_file_id   Int
+  academic_year  String?   @db.VarChar(50)
+  version        Int       @default(1)
 
   scan_file      DocumentScan  @relation(fields: [scan_file_id], references: [id])
   ar_sheet_links ARSheetLink[]
@@ -291,6 +309,8 @@ model ARSheetLink {
   ar_supporting_document ARSupportingDocument   @relation(fields: [ar_supporting_document_id], references: [id])
   acknowledgement_receipt AcknowledgementReceipt @relation(fields: [ar_id], references: [id])
 
+  @@unique([ar_supporting_document_id, ar_id])
+
   @@map("ar_sheet_links")
 }
 
@@ -301,10 +321,43 @@ model VerificationEvent {
   event       VerificationEventType
   user_id     Int
   occurred_at DateTime              @default(now())
+  reason      String?               @db.VarChar(255)
 
   voucher                 DisbursementVoucher?    @relation(fields: [dv_id], references: [id])
   acknowledgement_receipt AcknowledgementReceipt? @relation(fields: [ar_id], references: [id])
   user                    User                    @relation(fields: [user_id], references: [id])
 
   @@map("verification_events")
+}
+
+// Append-only snapshots preserve corrected/removed rows and the initiating officer.
+model FinancialMutation {
+  id          Int      @id @default(autoincrement())
+  target_type String   @db.VarChar(20)
+  target_id   Int
+  action      String   @db.VarChar(50)
+  user_id     Int
+  occurred_at DateTime @default(now())
+  before      Json?
+  after       Json?
+  @@index([target_type, target_id, occurred_at])
+  @@map("financial_mutations")
+}
+
+model ControlNumberReservation {
+  kind      String @db.VarChar(2)
+  number    String @db.VarChar(50)
+  target_id Int
+  @@id([kind, number])
+  @@map("control_number_reservations")
+}
+
+model ArchiveExport {
+  id Int @id @default(autoincrement())
+  term String @db.VarChar(50)
+  user_id Int
+  created_at DateTime @default(now())
+  manifest_sha256 String @db.VarChar(64)
+  scan_count Int
+  @@map("archive_exports")
 }

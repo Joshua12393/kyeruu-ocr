@@ -3,10 +3,10 @@ import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public details?: Record<string, unknown>) { super(message); }
 }
 export function apiError(error: unknown) {
-  if (error instanceof ApiError) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error instanceof ApiError) return NextResponse.json({ error: error.message, ...error.details }, { status: error.status });
   if (error instanceof ZodError || error instanceof SyntaxError) return NextResponse.json({ error: "Invalid request data", ...(error instanceof ZodError ? { details: error.issues } : {}) }, { status: 400 });
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     if (error.code === "P2002") return NextResponse.json({ error: "This control number or identifier already exists." }, { status: 409 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { financeMutation } from "@/lib/mutations";
 import { requireTreasurer, requireFinanceAccess } from "@/lib/auth";
 import { apiError, lockOpenGroup } from "@/lib/api";
 import { positiveId } from "@/lib/validation";
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
     const guard = await requireTreasurer(req);
     if (guard instanceof NextResponse) return guard;
     const { groupId } = z.object({ groupId: positiveId }).parse(await req.json());
-    const group = await prisma.$transaction(async tx => {
+    const group = await financeMutation(guard.user, async tx => {
       await lockOpenGroup(tx, groupId);
       return tx.scheduleGroup.update({ where: { id: groupId }, data: { is_closed: true, closed_at: new Date() } });
     });
