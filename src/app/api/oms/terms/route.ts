@@ -25,11 +25,15 @@ export async function POST(req: Request) {
     const input = termInput.parse(await req.json());
     await prisma.$transaction(async tx => {
       // Stable singleton lock even before settings have first been saved.
+      await tx.$queryRaw`SELECT id FROM oms_settings WHERE id = 1 FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM users WHERE role_type = 'ADMIN' ORDER BY id FOR UPDATE`;
       const actor = await tx.user.findUnique({ where: { id: guard.user.id } });
       if (!actor?.is_active || actor.deleted_at || actor.role_type !== "ADMIN") throw new ApiError(403, "Admin access is no longer active.");
+
       const settings = await tx.omsSettings.findUnique({ where: { id: 1 } });
       if ((settings?.version || 0) !== input.version) throw new ApiError(409, "Term settings changed. Reload before saving.");
+      const existing = await tx.academicTerm.findUnique({ where: { name: input.name } });
+      if (existing?.closed_at) throw new ApiError(403, "Closed term calendars cannot be changed or reopened.");
       const data = { starts_on: input.starts_on ? new Date(input.starts_on) : null, ends_on: input.ends_on ? new Date(input.ends_on) : null };
       await tx.academicTerm.upsert({ where: { name: input.name }, create: { name: input.name, ...data }, update: data });
       await tx.omsSettings.upsert({ where: { id: 1 }, create: { id: 1, current_term: input.make_current ? input.name : await currentTermName(), version: 1 }, update: { ...(input.make_current ? { current_term: input.name } : {}), version: { increment: 1 } } });
