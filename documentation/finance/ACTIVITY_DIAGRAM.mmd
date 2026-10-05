@@ -1,0 +1,18 @@
+flowchart TD
+  Start[Choose current open schedule] --> Mode{Primary or support?}
+  Mode --> Upload[Upload original with validated document type]
+  Upload --> Sheet{Collection or sales sheet?}
+  Sheet -->|Yes| Manual[Enter values manually]
+  Sheet -->|No| OCR[Bounded PaddleOCR extraction]
+  OCR --> Result{Readable result?}
+  Result -->|No| Manual
+  Result -->|Yes| Review[Edit predictions beside original]
+  Manual --> Review
+  Review --> Confirm[Explicit review then finance editor]
+  Confirm --> Save{Access / dates / versions / amounts valid?}
+  Save -->|No| Resolve[Keep draft and show validation or latest record]
+  Resolve --> Confirm
+  Save -->|Yes| Commit[Atomic save and affected verification clearing]
+  Commit --> Flags[Recompute support / mismatch / outstanding]
+  Flags --> Auditor[Auditor reviews original and current version]
+  Auditor --> Decision[Append verification decision]

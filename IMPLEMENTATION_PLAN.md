@@ -168,9 +168,9 @@ The user requested Phase 1 only. Later phases remain deferred. Phase 1 follows t
 - The user explicitly chose **Leave dates unset; I'll enter them in Admin** for `2026-2027`. No dates are guessed. Finance remains readable but mutations are disabled until both dates are saved and today's Philippine calendar date is within the inclusive range.
 - Historical-access policy: active accounts with one of the five current-term assignments can read historical Finance records. Former-term assignments alone and collection/OTHER assignments do not grant Finance access. Historical groups are immutable even if their legacy closure flag is false. Switching the current term requires assignments for that exact term; it does not close, export, or delete records.
 - IGP/Events default to two sides; Membership/Fines to inflow only. A group may customize one or two distinct directions, labels, and safe open-term metadata through the schedule editor. Existing sides retain IDs on renames. Used sides cannot change direction or be removed; used groups cannot change semester or move terms. Closed metadata is frozen. A database uniqueness constraint enforces at most one side per direction.
-- Existing per-group Treasurer closure remains unchanged; term-wide OMS closure/archive work stays in Phase 7. Deletion with audit history remains unchanged pending Phase 2's policy work.
+- Existing per-group Treasurer closure remains unchanged; term-wide OMS closure/archive work stays in Phase 7. Phase 2 subsequently adopted soft deletion with retained evidence and audit history.
 - Acceptance checks are tracked in `tests/phase1.test.ts` and the disposable-database `scripts/integration-test.ts`. Entering the real calendar dates and the team's visual acceptance remain setup/review steps, not work in a later phase.
-- Verified: lint, TypeScript checks, 12 unit tests, production build, and the disposable-database integration suite passed, including simultaneous side change/transaction creation. Temporary test databases were removed; real users and the unset calendar were preserved. The app responds on port 3000. Browser visual verification was blocked by browser security policy, so desktop/phone visual acceptance is still pending. Phase 2 and later phases have not been started by this delivery.
+- Verified: lint, TypeScript checks, 12 unit tests, production build, and the disposable-database integration suite passed, including simultaneous side change/transaction creation. Temporary test databases were removed; real users and the unset calendar were preserved. The app responds on port 3000. Browser visual verification was blocked by browser security policy, so desktop/phone visual acceptance is still pending. That was the Phase 1 delivery; Phase 2 status is recorded below.
 
 ### Phase 2: Manual records and reliable mutations
 
@@ -182,6 +182,21 @@ Stories: FIN-01, FIN-02, FIN-05, FIN-08, FIN-27, FIN-32, FIN-43, FIN-44.
 - Apply approved deletion policy; return support to the queue and preserve evidence/history.
 - Centralize locks, version increments, term checks, and verification invalidation for every mutation path.
 - Acceptance: manual full workflow works without OCR; concurrent operations fail safely; incorrect direction, duplicate controls, invalid dates, and over-allocation are rejected.
+
+Phase 2 implementation (2026-10-04):
+
+- User approved Treasurer soft deletion and flexible AR/DV controls. New values accept letters/numbers separated by hyphens/slashes; unchanged legacy controls remain editable. Old controls remain reserved after renaming/deletion.
+- Manual forms upload original images without OCR. Saved support allows header/row editing, unlinking, item schedule reassignment and allocation changes while preserving unchanged item IDs.
+- Central financial transactions lock OMS settings/calendar, recheck officer access, enforce current/open groups, return conflict snapshots, and clear affected verified parents. Receipt/sheet versions also protect queue actions.
+- Exact decimals validate dates, positive cent amounts, directions, duplicate allocations and coverage. Item quantity times unit cost rounds half-up to cents; rounded-zero and overflowing values are rejected.
+- Primary deletion retains rows/scans/verification events, records the actor and before/after mutation history, detaches support into the queue, and excludes deleted primaries from active totals/lists/reconciliation/verification. The history export retains deletion markers.
+- Migration 202610040003_phase2_mutations adds versions, term ownership, deletion markers, mutation history and control reservations. Support ownership is backfilled only when linked schedules prove one term; ambiguous legacy support stays read-only.
+- Complete local pre-migration backup: .local-backups/phase1-1791112544183.sql (its filename says phase1, but it is the state before Phase 2). No sample records or dates were inserted into the real database; the user will enter 2026-2027 dates in Admin.
+- Automated acceptance covers manual uploads with OCR unavailable, concurrent edits/allocations, support reassignment/unlinking, shared verification clearing, invalid data and soft-delete history/reservations. Visual desktop/phone acceptance remains pending after the previous browser security policy rejection.
+- The subsequent user request authorizes remaining Finance phases; the earlier Phase 2 boundary is superseded.
+
+
+Phase 2 validation: lint (zero warnings), type checking, 16 unit tests, production build, and the full disposable-database HTTP integration suite passed. Concurrent edits/allocations, manual uploads with OCR offline, conflict snapshots, saved support edits/unlinks/reassignment, closed-source protections, soft deletion, preserved evidence and permanent control reservations were verified.
 
 ### Phase 3: Evidence linking and reconciliation
 
@@ -308,6 +323,20 @@ Update the seven documentation artifacts named by the Finance specification when
 
 ## 11. Immediate next delivery
 
-Current delivery is Phase 1 only, as requested by the user. Do not begin Phase 2 or later phases until Phase 1 has passed its checks and the user approves proceeding. Reassess this file against the live code before each phase because current uncommitted work may change.
+The user subsequently requested all remaining Finance phases and module-conflict checks. This delivery implements Phases 3–7 and the evidence-independent enhancements in Phase 8. Wider OMS modules remain discovery workstreams, not invented implementations. Handwriting model selection/accuracy, human entry-time metrics, actual-host production deployment and browser visual acceptance remain pending prerequisites. Reassess this file against live code before extending scope.
 
 Any scope change gets a short entry: requested behavior, reason, affected stories/models/pages, owner decision, and validation impact. This gives the team one reference instead of several conflicting plans.
+
+
+## Remaining Finance phase delivery (2026-10-04)
+
+Phases 3–6 now share exact support calculations, signed soft flags, remaining coverage, mixed receipt retrieval, guided batch/manual OCR drafts, original/evidence detail review, immutable audit history, version-aware verification, filtered pagination and supplementary exports. Phase 7 adds Admin term-wide closure, complete selected-term archives including original bytes/checksums and an isolated restore verifier. Phase 8 adds explicit history-based suggestions and a labeled benchmark harness; no handwriting samples were supplied, so a separate model and measured handwriting accuracy remain unverified.
+
+Migrations 004/005 add lifecycle/scan metadata, export history, query indices, 50-character term compatibility and one-parent verification-event integrity. Existing scans and unset real dates are preserved. See documentation/FINANCE_RELEASE.md, documentation/MODULE_INTEGRATION_REVIEW.md and the seven documentation/finance artifacts for final behavior and release/recovery boundaries. Automated validation results follow after execution.
+
+
+Final validation (2026-10-04): production build, lint with zero warnings, TypeScript checks, Prisma schema validation, 21 Node unit tests, seven Python tests and the complete disposable-database HTTP integration suite passed. The final HTTP run also checks historical scans after deletion, guided source closure, unlinked contextual-sheet freezing, and in-flight OCR completion after closure. The isolated archive restore compares every exported field as well as foreign-key integrity, table counts and original-image SHA-256 hashes; fixture cleanup completed successfully. A real Next.js -> Python -> PaddleOCR -> saved-result exchange passed during the real-OCR run. That run originally caught the restore timezone problem; the final complete workflow/restore run passed after explicit UTC-string handling corrected it.
+
+One synthetic printed benchmark sample measured 11/11 labeled values, zero character error and zero required value corrections; cold HTTP latency was 29.836 seconds. This is a smoke baseline only, not real-receipt/handwriting accuracy or human confirmation-time evidence. No handwriting samples were supplied. No separate handwriting model, training, actual-host deployment or new browser visual acceptance is claimed. Prior browser access was blocked by approval policy; desktop/phone visual acceptance remains pending.
+
+Applied migration checksums match all saved migration files. The working database still contains four original scans, zero AR/DV sample records, and an unclosed 2026-2027 term with both dates NULL. The user must configure real dates in Admin before recording finance. App database readiness/login and Python health endpoints responded successfully. Seven finance specification artifact sources are updated under documentation/finance. Larger-volume performance testing, real OCR sample evaluation, private S3 verification and deployment-specific TLS/backups/monitoring remain release-environment checks; the pilot materializes filtered primary records for computed flags/totals before server pagination.

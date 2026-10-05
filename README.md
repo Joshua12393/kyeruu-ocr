@@ -89,27 +89,39 @@ inference uses the portable executor with oneDNN disabled for Windows compatibil
   **Schedules → Edit group & sides**. Safe renames preserve transaction/item links.
   Used sides cannot be removed or change direction; closed metadata is frozen.
 - Enter vouchers in outflow schedules and acknowledgement receipts in inflow
-  schedules. Forms support editing and Treasurer-only deletion.
+  schedules. Forms support editing, direct image upload without OCR, and Treasurer-only deletion.
+  New controls allow letters/digits separated by hyphens or slashes. Dates must
+  fit the term calendar; amounts use exact positive decimals with cent precision.
 - If the transaction schedule list is empty, use **Create schedule group** inside
   the form. Creation selects the appropriate inflow/outflow side without clearing
   your transaction values. Use **Refresh schedules** for groups created elsewhere.
 - Upload a PNG/JPEG/WebP image on the OCR page, up to 10 MB. Review recognized
   values and open a transaction draft, or save the scan for manual entry.
+- Upload originals directly in finance forms using **Upload image for manual entry**.
+  The OCR service can remain stopped for this workflow.
 - Record retailer-receipt items or handwritten collection/sales-sheet totals on
   the Supporting documents page. Link items to vouchers and allocate sheet
-  amounts across acknowledgement receipts.
+  amounts across acknowledgement receipts. Open **Saved supporting documents →
+  View / edit** to change headers, rows, item schedules, links or allocations.
+  Choose **Link later** to unlink an item; remove a sheet allocation to unlink it.
+  Item gross amounts round quantity × unit cost to cents using half-up rounding.
 - Use reconciliation to link unassigned scans, unlinked items, and remaining
   sheet balances. Link forms accept transaction control numbers.
 - Only the Auditor can verify/unverify. Edits and new evidence clear verification
-  and append audit events. Stale saves return HTTP 409.
+  and append audit events. Stale saves return HTTP 409 with the latest version
+  and record snapshot; forms retain the draft for explicit latest-value review.
 - Close a schedule group to block further transaction changes, supporting links,
   deletion, and verification changes. The ordinary update API cannot reopen it.
 - Archive search shows the original scan; `/api/term` exports transactions,
   support, scan references, and verification history.
 
 Reconciliation checks supporting evidence, not merely the presence of a primary
-scan. Exact decimal comparisons flag amount differences. Transactions with audit
-history cannot be deleted; edit and reverify corrections before closing the term.
+scan. Exact decimal comparisons flag amount differences. Treasurer deletion hides a
+transaction from active totals and queues while keeping scans, verification events
+and before/after audit history. Its support returns to the queue. Old control
+numbers stay reserved after renaming/deletion. Historical or closed source groups
+block support reassignment too. The existing /api/term history export includes
+deleted records with deletion markers; it is not an active-totals report.
 
 ## Storage and security
 
@@ -159,3 +171,6 @@ S3 access requires your own bucket configuration and is not exercised by local t
 
 References: [Prisma MySQL setup](https://www.prisma.io/docs/v7/prisma-orm/quickstart/mysql)
 and [PaddleOCR quick start](https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/quick_start.md).
+
+
+Remaining Finance phases: see [release and recovery](documentation/FINANCE_RELEASE.md) and [integration fixes](documentation/MODULE_INTEGRATION_REVIEW.md). The latest delivery supersedes earlier phase deferral notes. Real term dates remain unset; handwriting evaluation and visual acceptance need samples/review.

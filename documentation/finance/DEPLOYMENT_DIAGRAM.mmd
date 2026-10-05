@@ -1,0 +1,13 @@
+flowchart TD
+  Browser[Officer browser] --> TLS[HTTPS reverse proxy on chosen host]
+  TLS --> Next[Next.js production server]
+  Next --> DB[(Persistent MariaDB database)]
+  Next --> Storage[(Persistent private disk or private S3)]
+  Next --> OCR[Private FastAPI service / token for remote access]
+  OCR --> CPU[CPU PaddleOCR models]
+  DB --> Backup[Database backup plus scan storage backup]
+  Storage --> Backup
+  Backup --> Restore[Separate restore database and directory]
+  Monitor[Health monitoring] --> Next
+  Monitor --> OCR
+  Note[Local pilot: Next 3000 / OCR 8000 / MariaDB 3306]

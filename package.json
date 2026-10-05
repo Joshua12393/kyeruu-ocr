@@ -14,7 +14,9 @@
     "admin:provision": "tsx scripts/provision-admin.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:integration": "tsx scripts/integration-test.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "archive:verify": "tsx scripts/restore-archive.ts",
+    "release:check": "tsx scripts/check-release.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

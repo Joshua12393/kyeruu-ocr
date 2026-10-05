@@ -1,0 +1,18 @@
+# Finance use cases
+
+Scope: single organization, active officer assignments, real term calendar configured by Admin.
+
+1. Account setup: public registration creates a pending account. Admin assigns one of five Finance roles. Deactivation revokes sessions; deletion retains financial actors/history. Admin has no Finance edit or Auditor authority.
+2. Record primary: an editor selects a current open schedule, uploads an original optionally, confirms AR/DV values and submits. Direction, date, decimal, permanent control reservation and term checks run inside one transaction. A stale version returns a conflict; the officer reviews the latest record.
+3. Review supporting documents: an editor uploads one original receipt with multiple item schedules, or manually confirms a sheet total and partial AR coverage. Support creates no second inflow/outflow. Saved items retain identity. Editing/unlinking requires document and all affected primary versions; all affected verifications clear.
+4. Guided OCR: choose schedule, mode, allowed type, then files. Two requests at most run at once. Successful scans and failed scan IDs survive batch handoff. Sheets bypass OCR. Extraction is a draft; unknown quantity/cost remains blank. Manual fallback/retry reuses the original. User reviews values before saving through the finance form.
+5. Reconcile: compute linked support totals, signed differences, missing evidence and remaining sheet coverage. These independent flags never block a structurally valid save or an Auditor decision. Queue/detail actions link appropriate same-schedule items or explicit sheet allocations.
+6. Audit: Auditor reviews original evidence next to confirmed values, then verifies/unverifies exactly that record version. Append-only events record actor/time/reason. Relevant primary/support mutations increment versions and clear verification.
+7. Retrieve and summarize: current officers read active and historical records. Overview, archive retrieval and audit review share validated server filters, pagination and totals. Downloads are supplementary JSON records, not official statements/e-receipts. Soft-deleted detail/history survives but is excluded from active totals.
+8. Delete primary: Treasurer soft-deletes an open current-term primary. Scans and audit history remain. Linked support returns to the queue. Old controls stay reserved.
+9. Close and archive term: Admin explicitly confirms closure with the settings version. All groups and term-owned finance writes become immutable; reopening is unavailable. Download includes selected-term records, deleted primaries, term-owned orphans, original bytes, checksums and audit history. Unassigned legacy scans are reported as excluded, never guessed into a term. Restoring uses a new isolated database and private upload directory; archived accounts cannot log in.
+10. Suggestions and evaluation: confirmed historical item names suggest schedule categories, applied only by explicit selection. No history yields no suggestion. A labeled sample benchmark can compare OCR services. No handwriting sample accuracy, separate model or human entry-time result is claimed.
+
+Failure behavior: unauthorized access is rejected; invalid input does not partially save; conflict preserves the officer draft; OCR outage retains original evidence; missing archive bytes fail the download; failed restore cleans only its own isolated fixture.
+
+Treasurer may also close an individual current/open schedule group through the existing group workflow. Admin term-wide closure is the shared OMS lifecycle operation and freezes every remaining group plus unlinked term documents. In-flight OCR completion cannot update a scan after source closure or term turnover.

@@ -1,0 +1,15 @@
+flowchart LR
+  Editor[Adviser / President / Treasurer / Assistant] --> Record[Record AR or DV]
+  Editor --> Support[Edit and link supporting evidence]
+  Editor --> OCR[Review OCR drafts]
+  Editor --> Retrieve[Filter and retrieve records]
+  Auditor --> Retrieve
+  Auditor --> Audit[Review version and verify]
+  Treasurer --> Delete[Soft delete primary]
+  Admin --> Accounts[Manage accounts and roles]
+  Admin --> Calendar[Configure calendar / close term]
+  Admin --> Archive[Export closed term archive]
+  Record --> Guard[Current assignment / open term / valid values]
+  Support --> Guard
+  Audit --> Guard
+  Delete --> Guard

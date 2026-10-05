@@ -1,0 +1,12 @@
+flowchart TD
+  UI[Next App Router pages / shared Finance browser] --> API[Authenticated route handlers]
+  API --> Auth[Session / role / calendar capabilities]
+  API --> Domain[Finance mutations / support / links / verification]
+  API --> Query[Shared Finance queries and reconciliation]
+  API --> Lifecycle[Term closure / archive and restore]
+  Domain --> Prisma[Prisma MariaDB adapter]
+  Query --> Prisma
+  Lifecycle --> Prisma
+  API --> Storage[Private local or S3 storage]
+  API --> OCR[Bounded OCR proxy]
+  OCR --> Python[FastAPI / PaddleOCR parser]

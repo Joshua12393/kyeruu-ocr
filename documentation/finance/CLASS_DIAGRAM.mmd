@@ -1,0 +1,20 @@
+classDiagram
+  AcademicTerm --> ScheduleGroup : calendar and closure
+  ScheduleGroup "1" --> "1..2" Schedule
+  Schedule "1" --> "*" DisbursementVoucher
+  Schedule "1" --> "*" AcknowledgementReceipt
+  Schedule "1" --> "*" ReceiptParticular
+  Receipt "1" --> "*" ReceiptParticular
+  ReceiptParticular "*" --> "0..1" DisbursementVoucher
+  ARSupportingDocument "1" --> "*" ARSheetLink
+  ARSheetLink "*" --> "1" AcknowledgementReceipt
+  DocumentScan --> Receipt : original
+  DocumentScan --> ARSupportingDocument : original
+  DocumentScan --> DisbursementVoucher : optional original
+  DocumentScan --> AcknowledgementReceipt : optional original
+  User "1" --> "*" OfficerTerm
+  User --> VerificationEvent : actor
+  User --> FinancialMutation : actor
+  User --> ArchiveExport : exporter
+  ControlNumberReservation --> DisbursementVoucher : DV control identity
+  ControlNumberReservation --> AcknowledgementReceipt : AR control identity

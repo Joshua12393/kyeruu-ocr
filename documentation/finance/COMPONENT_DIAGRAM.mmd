@@ -1,0 +1,15 @@
+flowchart LR
+  Browser[Officer browser] --> Next[Next.js UI and API]
+  Next --> Auth[NextAuth credential sessions]
+  Next --> Mutation[Atomic finance services]
+  Next --> Query[Filtered retrieval / totals / detail]
+  Next --> Admin[Accounts / OMS lifecycle]
+  Mutation --> DB[(MariaDB)]
+  Query --> DB
+  Admin --> DB
+  Next --> Store[(Private immutable scan files)]
+  Next --> Proxy[OCR proxy and concurrency limiter]
+  Proxy --> FastAPI[FastAPI upload validator]
+  FastAPI --> Paddle[CPU PaddleOCR]
+  Admin --> Export[Archive manifest / original bytes]
+  Export --> Restore[Isolated restore verifier]
