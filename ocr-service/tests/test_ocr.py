@@ -28,6 +28,14 @@ class OcrTests(unittest.TestCase):
         words = [{"text": text, "x": x, "y": y, "height": 20, "confidence": .95} for text,x,y in [("50.00",300,12),("Pen",10,10),("Paper",10,40),("75.00",300,42)]]
         self.assertEqual([row["text"] for row in group_words(words)], ["Pen 50.00", "Paper 75.00"])
 
+    def test_quantity_and_cost_need_explicit_matching_arithmetic(self):
+        rows = [{"text": text, "confidence": .9} for text in ["Paper 2 x 50.00 100.00", "Pen 3 x 20.00 99.00", "Rice 125.00"]]
+        items = parse_rows(rows, "printed")["line_items"]
+        self.assertEqual((items[0]["quantity"], items[0]["unit_cost"]), (2., 50.))
+        for item in items[1:]:
+            self.assertIsNone(item["quantity"])
+            self.assertIsNone(item["unit_cost"])
+
     def test_bad_mime_and_corrupt_image_are_rejected(self):
         for content,mime in [(self.image,"application/octet-stream"),(b"invalid","image/png")]:
             self.assertEqual(self.client.post("/api/ocr/extract/printed",files={"file":("scan.png",content,mime)}).status_code,400)
