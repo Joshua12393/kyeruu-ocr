@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useOfficer } from "@/app/navigation";
 import { canEditFinance } from "@/lib/capabilities";
 
@@ -11,7 +12,8 @@ import { AlertTriangle, FileWarning, Search, Link as LinkIcon } from "lucide-rea
 
 
 export default function ReconciliationPage() {
-  const canEdit = canEditFinance(useOfficer());
+  const officer = useOfficer(); const useOfficerTerm = officer?.term;
+  const canEdit = canEditFinance(officer);
   const [data, setData] = useState<ReconciliationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [orphans, setOrphans] = useState<OrphanDocument[]>([]);
@@ -61,7 +63,7 @@ export default function ReconciliationPage() {
       const res = await fetch(selectedOrphan?.kind === "SCAN" ? "/api/documents/orphan/link" : "/api/documents/supporting/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedOrphan?.kind === "SCAN" ? { ...payload, scan_id: selectedOrphan.scan_id, transaction_id: target.id, version: target.version } : { kind: selectedOrphan?.kind, document_id: selectedOrphan?.id, transaction_id: target.id, version: target.version, amount_covered: formData.get("amount_covered") }),
+        body: JSON.stringify(selectedOrphan?.kind === "SCAN" ? { ...payload, scan_id: selectedOrphan.scan_id, transaction_id: target.id, version: target.version } : { kind: selectedOrphan?.kind, document_id: selectedOrphan?.id, document_version: selectedOrphan?.document_version, transaction_id: target.id, version: target.version, amount_covered: formData.get("amount_covered") }),
       });
 
       if (!res.ok) throw new Error((await res.json()).error || "Linking failed");
@@ -117,10 +119,10 @@ export default function ReconciliationPage() {
           {orphans.map((orphan) => (
             <div key={`${orphan.kind}-${orphan.id}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex justify-between items-center">
               <div className="truncate mr-4">
-                <p className="text-sm font-medium truncate">{orphan.file_path}</p>
+                <p className="text-sm font-medium truncate">{orphan.kind} · {orphan.file_path}</p>{orphan.remaining && <p className="text-xs">PHP {orphan.remaining} uncovered</p>}
                 <p className="text-xs text-gray-400">{new Date(orphan.uploaded_at).toLocaleDateString()}</p>
               </div>
-              <button disabled={!canEdit}
+              <button disabled={!canEdit || orphan.read_only || (orphan.academic_year != null && orphan.academic_year !== useOfficerTerm)}
                 onClick={() => { setSelectedOrphan(orphan); setIsLinkModalOpen(true); }}
                 className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                 title="Link to Transaction"
@@ -142,13 +144,13 @@ export default function ReconciliationPage() {
           <div className="space-y-2">
             {data?.incomplete.vouchers.map((v) => (
               <div key={v.id} className="p-3 bg-white border border-gray-200 rounded-lg flex justify-between items-center">
-                <span className="text-sm">DV: {v.control_number}</span>
+                <span className="text-sm"><Link className="underline" href={"/transactions/DV/" + v.id}>DV: {v.control_number}</Link></span>
                 <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded">MISSING SUPPORT</span>
               </div>
             ))}
             {data?.incomplete.receipts.map((r) => (
               <div key={r.id} className="p-3 bg-white border border-gray-200 rounded-lg flex justify-between items-center">
-                <span className="text-sm">AR: {r.control_number}</span>
+                <span className="text-sm"><Link className="underline" href={"/transactions/AR/" + r.id}>AR: {r.control_number}</Link></span>
                 <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded">MISSING SUPPORT</span>
               </div>
             ))}
@@ -163,14 +165,14 @@ export default function ReconciliationPage() {
           <div className="space-y-2">
             {data?.mismatches.vouchers.map((v) => (
               <div key={v.id} className="p-3 bg-white border border-gray-200 rounded-lg flex justify-between items-center">
-                <span className="text-sm">DV: {v.control_number}</span>
-                <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">MISMATCH</span>
+                <span className="text-sm"><Link className="underline" href={"/transactions/DV/" + v.id}>DV: {v.control_number}</Link></span>
+                <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">Difference PHP {v.difference}</span>
               </div>
             ))}
             {data?.mismatches.receipts.map((r) => (
               <div key={r.id} className="p-3 bg-white border border-gray-200 rounded-lg flex justify-between items-center">
-                <span className="text-sm">AR: {r.control_number}</span>
-                <span className="text-xs font-bold text-red-600 bg-red-50 rounded px-2 py-1">MISMATCH</span>
+                <span className="text-sm"><Link className="underline" href={"/transactions/AR/" + r.id}>AR: {r.control_number}</Link></span>
+                <span className="text-xs font-bold text-red-600 bg-red-50 rounded px-2 py-1">Difference PHP {r.difference}</span>
               </div>
             ))}
             {data?.summary.total_mismatches === 0 && <p className="text-gray-400 text-sm italic">No amount mismatches found.</p>}
